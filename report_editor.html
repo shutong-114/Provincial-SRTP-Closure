@@ -350,19 +350,103 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
 </div><!-- #app -->
 
 <div id="notif"></div>
+<!-- Library loading status bar (hidden once all loaded) -->
+<div id="lib-status" style="
+  position:fixed;bottom:0;left:0;right:0;
+  background:#1a3a6b;color:#adc6f5;
+  font-size:11.5px;text-align:center;padding:4px 0;
+  z-index:9998;letter-spacing:.3px;
+">⏳ 正在加载 docx.js / FileSaver…</div>
 
-<!-- ===== SCRIPTS ===== -->
-<!-- KaTeX -->
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
-<!-- docx.js (Word公式/DOCX生成) -->
-<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
-<!-- JSZip (DOCX打包后备) -->
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<!-- FileSaver -->
-<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-<!-- html2pdf (PDF导出) -->
-<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+<!-- ===== DYNAMIC SCRIPT LOADER (multi-CDN fallback) ===== -->
+<script>
+/**
+ * Try loading a script from each URL in sequence; resolve on first success.
+ * If all fail, resolve anyway (caller checks window global).
+ */
+function loadScript(urls, globalCheck) {
+  return new Promise(resolve => {
+    let idx = 0;
+    function tryNext() {
+      if (idx >= urls.length) { resolve(false); return; }
+      const url = urls[idx++];
+      const s = document.createElement('script');
+      s.src = url;
+      s.crossOrigin = 'anonymous';
+      s.onload = () => {
+        // Some UMD bundles need a tick to set the global
+        setTimeout(() => {
+          if (!globalCheck || globalCheck()) { resolve(true); }
+          else { tryNext(); }           // script loaded but global not set → try next
+        }, 30);
+      };
+      s.onerror = () => { document.head.removeChild(s); tryNext(); };
+      document.head.appendChild(s);
+    }
+    tryNext();
+  });
+}
+
+// Track readiness
+window._libReady = { katex: false, docx: false, fileSaver: false, html2pdf: false };
+
+// KaTeX
+loadScript([
+  'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js',
+  'https://unpkg.com/katex@0.16.9/dist/katex.min.js'
+], () => !!window.katex).then(ok => {
+  if (ok) loadScript([
+    'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js',
+    'https://unpkg.com/katex@0.16.9/dist/contrib/auto-render.min.js'
+  ], () => !!window.renderMathInElement).then(() => {
+    window._libReady.katex = true;
+    if (window._katexCallback) window._katexCallback();
+  });
+});
+
+// docx.js — try unpkg first (more reliable UMD build path), then jsDelivr
+loadScript([
+  'https://unpkg.com/docx@8.5.0/build/index.js',
+  'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js',
+  'https://unpkg.com/docx@7.8.2/build/index.js',
+  'https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js'
+], () => !!(window.docx && window.docx.Document)).then(ok => {
+  window._libReady.docx = ok;
+  updateLibStatus();
+});
+
+// FileSaver
+loadScript([
+  'https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js',
+  'https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js'
+], () => typeof saveAs === 'function').then(ok => {
+  window._libReady.fileSaver = ok;
+  updateLibStatus();
+});
+
+// html2pdf
+loadScript([
+  'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
+  'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js'
+], () => !!window.html2pdf).then(ok => {
+  window._libReady.html2pdf = ok;
+  updateLibStatus();
+});
+
+function updateLibStatus() {
+  const bar = document.getElementById('lib-status');
+  if (!bar) return;
+  const allReady = window._libReady.docx && window._libReady.fileSaver;
+  if (allReady) {
+    bar.style.display = 'none';
+  } else {
+    const parts = [];
+    if (!window._libReady.docx) parts.push('docx.js');
+    if (!window._libReady.fileSaver) parts.push('FileSaver');
+    bar.textContent = '⏳ 正在加载库：' + parts.join('、') + '…';
+  }
+}
+</script>
 
 <script>
 /* ============================================================
@@ -679,12 +763,38 @@ function notify(msg, duration=2500) {
    via docx.js Math API
    ============================================================ */
 async function exportToDocx() {
-  notify('⏳ 正在生成 DOCX（含Word公式）…', 8000);
+  notify('⏳ 正在生成 DOCX（含Word公式）…', 12000);
   await new Promise(r=>setTimeout(r, 50));
+
+  // ── wait up to 15 s for docx.js and FileSaver to load ──
+  const waitLib = (check, label, ms=15000) => new Promise((res, rej) => {
+    if (check()) { res(); return; }
+    const start = Date.now();
+    const t = setInterval(() => {
+      if (check()) { clearInterval(t); res(); }
+      else if (Date.now()-start > ms) {
+        clearInterval(t);
+        rej(new Error(`${label} 加载超时，请检查网络连接后刷新页面重试`));
+      }
+    }, 200);
+  });
+
+  try {
+    await waitLib(
+      () => !!(window.docx && window.docx.Document),
+      'docx.js'
+    );
+    await waitLib(
+      () => typeof saveAs === 'function',
+      'FileSaver'
+    );
+  } catch(waitErr) {
+    notify('❌ ' + waitErr.message, 8000);
+    return;
+  }
 
   try {
     const D = window.docx;
-    if (!D) throw new Error('docx.js 未加载');
 
     // ── current style settings ──
     const bodyFontName = getDocxFontName(document.getElementById('s-bfont').value);
@@ -1060,9 +1170,20 @@ function stripInlineMath(text) {
    PDF EXPORT  –  uses html2pdf.js
    ============================================================ */
 async function exportToPDF() {
-  if (!window.html2pdf) { notify('❌ html2pdf.js 未加载'); return; }
-  notify('⏳ 正在生成 PDF…', 8000);
+  notify('⏳ 正在生成 PDF…', 10000);
   await new Promise(r=>setTimeout(r,50));
+
+  // wait up to 15s for html2pdf
+  const waitPdf = new Promise((res,rej) => {
+    if (window.html2pdf) { res(); return; }
+    const t0 = Date.now();
+    const iv = setInterval(()=>{
+      if (window.html2pdf) { clearInterval(iv); res(); }
+      else if (Date.now()-t0>15000) { clearInterval(iv); rej(new Error('html2pdf.js 加载超时，请检查网络后刷新')); }
+    },200);
+  });
+  try { await waitPdf; }
+  catch(e) { notify('❌ '+e.message, 6000); return; }
 
   const el = document.getElementById('document-page');
   const opt = {
@@ -1081,21 +1202,28 @@ async function exportToPDF() {
 /* ============================================================
    INIT
    ============================================================ */
+function runKaTeX() {
+  if (!window.renderMathInElement) return;
+  renderMathInElement(document.getElementById('doc-content'), {
+    delimiters: [
+      { left:'$$', right:'$$', display:true },
+      { left:'$',  right:'$',  display:false },
+      { left:'\\[', right:'\\]', display:true },
+      { left:'\\(',  right:'\\)',  display:false }
+    ],
+    throwOnError: false
+  });
+}
+
 window.addEventListener('load', () => {
   renderContent();
   applyStyles();
-
-  // KaTeX rendering
+  // KaTeX may already be loaded (fast CDN) or arrive later via dynamic loader
   if (window.renderMathInElement) {
-    renderMathInElement(document.getElementById('doc-content'), {
-      delimiters: [
-        { left:'$$', right:'$$', display:true },
-        { left:'$',  right:'$',  display:false },
-        { left:'\\[', right:'\\]', display:true },
-        { left:'\\(',  right:'\\)',  display:false }
-      ],
-      throwOnError: false
-    });
+    runKaTeX();
+  } else {
+    // will be called by the dynamic loader once auto-render lands
+    window._katexCallback = runKaTeX;
   }
 });
 </script>
