@@ -828,12 +828,12 @@ async function exportToDocx() {
       });
     }
 
-    function mkH1(text) {
+    function mkH1(text, breakPage = false) {
       return new D.Paragraph({
         children: [new D.TextRun({ text, font: h1FontName, size: h1Size, bold: true })],
         alignment: h1Align,
         spacing: { before: 480, after: 240 },
-        pageBreakBefore: true
+        ...(breakPage ? { pageBreakBefore: true } : {})
       });
     }
 
@@ -1048,12 +1048,11 @@ async function exportToDocx() {
           docChildren.push(new D.Paragraph({
             children: [new D.TextRun({ text: item.text, font: h1FontName, size: h1Size, bold: true })],
             alignment: D.AlignmentType.CENTER,
-            spacing: { before: 480, after: 240 },
-            pageBreakBefore: true
+            spacing: { before: 480, after: 240 }
           }));
           break;
         case 'h1':
-          docChildren.push(mkH1(item.text));
+          docChildren.push(mkH1(item.text, item.text === '参考文献'));
           break;
         case 'h2':
           docChildren.push(mkH2(item.text));
