@@ -853,39 +853,121 @@ async function exportToDocx() {
       });
     }
 
-    // ── Math helper functions ──
-    function mr(text) {
-      // MathRun constructor takes a string in docx 8.x
-      return new D.MathRun(text);
+    // ── LaTeX → OMML conversion via KaTeX MathML ──────────────
+
+    /**
+     * Recursively convert a MathML DOM node to an array of docx OMML elements.
+     */
+    function mathmlNodeToOmml(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent;
+        if (!text.trim()) return [];
+        return [new D.MathRun(text)];
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return [];
+
+      // Strip namespace prefix (e.g. "m:mrow" → "mrow")
+      const tag = node.tagName.toLowerCase().replace(/^[a-z0-9]+:/, '');
+
+      const childOmml = (el) => {
+        const out = [];
+        for (const c of el.childNodes) out.push(...mathmlNodeToOmml(c));
+        return out;
+      };
+      const nth = (n) => node.children[n] ? childOmml(node.children[n]) : [];
+
+      switch (tag) {
+        case 'math':
+        case 'mrow':
+        case 'mstyle':
+        case 'mpadded':
+        case 'merror':
+        case 'mphantom':
+        case 'mfenced':
+          return childOmml(node);
+
+        case 'semantics':
+          // Only process the first child (skip <annotation>)
+          return node.children[0] ? childOmml(node.children[0]) : [];
+
+        case 'annotation':
+        case 'annotation-xml':
+          return [];
+
+        case 'mi':
+        case 'mn':
+        case 'mo':
+        case 'mtext':
+          return node.textContent ? [new D.MathRun(node.textContent)] : [];
+
+        case 'mspace':
+          return [new D.MathRun('\u00a0')];
+
+        case 'mfrac':
+          return [new D.MathFraction({ numerator: nth(0), denominator: nth(1) })];
+
+        case 'msqrt':
+          try { return [new D.MathRadical({ children: childOmml(node) })] }
+          catch(e) { return [new D.MathRun('√('), ...childOmml(node), new D.MathRun(')')]; }
+
+        case 'mroot':
+          try { return [new D.MathRadical({ children: nth(0), degree: nth(1) })]; }
+          catch(e) { return [...nth(1), new D.MathRun('√('), ...nth(0), new D.MathRun(')')]; }
+
+        case 'msub':
+          return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+
+        case 'msup':
+          return [new D.MathSuperScript({ children: nth(0), superScript: nth(1) })];
+
+        case 'msubsup':
+          return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
+
+        case 'mover':
+          // Treat as superscript (covers \hat, \widetilde, limits etc.)
+          return [new D.MathSuperScript({ children: nth(0), superScript: nth(1) })];
+
+        case 'munder':
+          return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+
+        case 'munderover':
+          return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
+
+        case 'mtable': {
+          // Flatten table rows (covers \begin{cases}, \begin{pmatrix}, etc.)
+          const rows = Array.from(node.children).map(tr => childOmml(tr));
+          const out = [];
+          rows.forEach((r, i) => { if (i > 0) out.push(new D.MathRun(';  ')); out.push(...r); });
+          return out;
+        }
+
+        case 'mtr':
+        case 'mtd':
+        case 'mlabeledtr':
+        case 'menclose':
+        case 'mmultiscripts':
+        default:
+          return childOmml(node);
+      }
     }
 
-    function mfrac(numChildren, denChildren) {
-      return new D.MathFraction({
-        numerator: numChildren,
-        denominator: denChildren
-      });
-    }
-
-    function msub(baseChildren, subChildren) {
-      return new D.MathSubScript({
-        children: baseChildren,
-        subScript: subChildren
-      });
-    }
-
-    function msup(baseChildren, supChildren) {
-      return new D.MathSuperScript({
-        children: baseChildren,
-        superScript: supChildren
-      });
-    }
-
-    function msubsup(baseChildren, subChildren, supChildren) {
-      return new D.MathSubSuperScript({
-        children: baseChildren,
-        subScript: subChildren,
-        superScript: supChildren
-      });
+    /**
+     * Convert a LaTeX string to an array of docx OMML math elements.
+     * Uses KaTeX for reliable parsing; falls back to a plain MathRun if KaTeX is unavailable.
+     */
+    function latexToOmml(latex) {
+      try {
+        if (!window.katex) return [new D.MathRun(latex)];
+        const html = katex.renderToString(latex, { output: 'mathml', throwOnError: false });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const mathEl = div.querySelector('math');
+        if (!mathEl) return [new D.MathRun(latex)];
+        return mathmlNodeToOmml(mathEl);
+      } catch(e) {
+        console.warn('latexToOmml failed:', latex, e);
+        return [new D.MathRun(latex)];
+      }
     }
 
     function mathPara(mathChildren, num) {
@@ -900,118 +982,56 @@ async function exportToDocx() {
       });
     }
 
-    // ── pre-built math paragraphs keyed by formula content ──
-    // We build them lazily by matching latex string
+    /** Build a centred display-math paragraph from a LaTeX string. */
     function buildMathForLatex(latex, num) {
-      try {
-        // Formula (1): f(n) = g(n) + h(n)
-        if (latex.includes('f(n)=g(n)+h(n)')) {
-          return mathPara([mr('f(n) = g(n) + h(n),  '), mr('g(n) = g(n−1) + d'), msub([mr('')],[mr('n−1→n')])], num);
+      return mathPara(latexToOmml(latex), num);
+    }
+
+    /**
+     * Split a paragraph text string into alternating plain-text / inline-math segments.
+     * Handles $$...$$ (display, treated as inline) and $...$ markers.
+     */
+    function parseMathSegments(text) {
+      const segs = [];
+      let i = 0;
+      while (i < text.length) {
+        if (text[i] === '$' && text[i + 1] === '$') {
+          const end = text.indexOf('$$', i + 2);
+          if (end !== -1) { segs.push({ math: true, s: text.slice(i + 2, end) }); i = end + 2; continue; }
         }
-        // Formula (2): g(n) = ... W = 1 + 1/(d_min+eps)
-        if (latex.includes('W=1+')) {
-          return mathPara([
-            mr('g(n) = g(n−1) + W · d'), msub([mr('')],[mr('n−1→n')]), mr(',  W = 1 + '),
-            mfrac([mr('1')], [msub([mr('d')],[mr('min')]), mr(' + ε')])
-          ], num);
+        if (text[i] === '$') {
+          const end = text.indexOf('$', i + 1);
+          if (end !== -1) { segs.push({ math: true, s: text.slice(i + 1, end) }); i = end + 1; continue; }
         }
-        // LF
-        if (latex.includes('mathcal{LF}(x)') && latex.includes('bigcap')) {
-          return mathPara([
-            mr('LF(x) = { q ∈ W  |  q ∈ '), mr('⋂'), msub([mr('')],[mr('i=1')]), msup([mr('')],[mr('N')]), mr(' Hᵢ(x) }')
-          ], num);
-        }
-        // Hi
-        if (latex.includes('H_i(x)') && latex.includes('le c_i')) {
-          return mathPara([
-            mr('Hᵢ(x) = { q ∈ W  |  (q − p'), msub([mr('')],[mr('c')]), mr(')ᵀ dᵢ ≤ cᵢ }')
-          ], num);
-        }
-        // Full LF (eq 7)
-        if (latex.includes('mathrm{disk}')) {
-          return mathPara([
-            mr('LF = { q ∈ W  |  q ∈ '), mr('(⋂ H'), msub([mr('')],[mr('disk,i')]), mr(') ∩ (⋂ H'), msub([mr('')],[mr('poly,k')]), mr(') }')
-          ], num);
-        }
-        // opt problem (8)
-        if (latex.includes('frac{\\lambda}{2}') && latex.includes('Q\\in[S]')) {
-          return mathPara([
-            mr('min'), msub([mr(' ')],[mr('Q')]),
-            mr(' Σ [λ/2 ‖qᵢ − Tᵢ‖² + (1−λ)‖qᵢ − Tᵢ‖₁],  s.t. Q∈[S], qᵢ∈LF')
-          ], num);
-        }
-        // opt problem (9)
-        if (latex.includes('frac{\\lambda}{2}') && latex.includes('Aq=0')) {
-          return mathPara([
-            mr('min'), msub([mr(' ')],[mr('q')]),
-            mr(' '), mfrac([mr('λ')],[mr('2')]), mr('‖q−T‖² + (1−λ)‖q−T‖₁,  s.t. Aq = 0, q ∈ LFⁿ')
-          ], num);
-        }
-        // optimality conditions (10)
-        if (latex.includes('varphi') && latex.includes('begin{cases}') && latex.includes('z^*=')) {
-          return mathPara([
-            mr('q* = φ(q*−σ[λ(q*−p)+(1−λ)z*+AᵀY*]),  Aq* = 0,  z* = ψ(z*+q*−p)')
-          ], num);
-        }
-        // iterative algorithm (11)
-        if (latex.includes('begin{cases}') && latex.includes('q_{k+1}')) {
-          return mathPara([
-            mr('q'), msub([mr('')],[mr('k+1')]), mr(' = φ(q'), msub([mr('')],[mr('k')]),
-            mr('−σ[λ(q'), msub([mr('')],[mr('k')]), mr('−p)+(1−λ)ψ(z'), msub([mr('')],[mr('k')]),
-            mr('+q'), msub([mr('')],[mr('k')]), mr('−p)+Aᵀ(y'), msub([mr('')],[mr('k')]),
-            mr('+Aq'), msub([mr('')],[mr('k')]), mr(')])')
-          ], num);
-        }
-        // sigma < 1/(2+lambda_max)
-        if (latex.includes('sigma<') || latex.includes('\\sigma<')) {
-          return mathPara([
-            mr('σ < '), mfrac([mr('1')],[mr('2 + λ'), msub([mr('')],[mr('max')]), mr('(AᵀA)')])
-          ], num);
-        }
-        // Lyapunov
-        if (latex.includes('V(q_k') || latex.includes('V(q_{k}')) {
-          return mathPara([
-            mr('V(q'), msub([mr('')],[mr('k')]), mr(', y'), msub([mr('')],[mr('k')]),
-            mr(', z'), msub([mr('')],[mr('k')]), mr(') = ‖q'), msub([mr('')],[mr('k')]),
-            mr('−q*‖² + σ(‖y'), msub([mr('')],[mr('k')]), mr('−y*‖² + (1−λ)‖z'),
-            msub([mr('')],[mr('k')]), mr('−z*‖²)')
-          ], num);
-        }
-        // RVO
-        if (latex.includes('mathrm{RVO}') || latex.includes('RVO')) {
-          return mathPara([
-            mr('RVO'), msub([mr('')],[mr('ij')]), mr('(v'), msub([mr('')],[mr('j')]),
-            mr('(t), v'), msub([mr('')],[mr('i')]),
-            mr('(t)) = { v\'ᵢ(t) | 2v\'ᵢ(t)−vᵢ(t) ∈ VO'), msub([mr('')],[mr('ij')]),
-            mr('(v'), msub([mr('')],[mr('j')]), mr('(t)) }')
-          ], num);
-        }
-        // argmin velocity
-        if (latex.includes('arg\\min') && latex.includes('v_{\\mathrm{pref}') && !latex.includes('beta')) {
-          return mathPara([
-            mr('vᵢ(t) = argmin'), msub([mr(' ')],[mr('v∈Gᵢ(t)∖Oᵢ(t)')]),
-            mr(' ‖v − v'), msub([mr('')],[mr('pref,i')]), mr('(t)‖')
-          ], num);
-        }
-        // argmin with beta
-        if (latex.includes('beta') && latex.includes('arg\\min')) {
-          return mathPara([
-            mr('vᵢ(t) = argmin'), msub([mr(' ')],[mr('v∈Gᵢ(t)')]),
-            mr(' [ β / t'), msub([mr('')],[mr('i')]), msup([mr('')],[mr('col')]),
-            mr('(v,t) + ‖v − v'), msub([mr('')],[mr('pref,i')]), mr('(t)‖ ]')
-          ], num);
-        }
-        // default: plain text math
-        return mathPara([mr(latex.replace(/\\[a-zA-Z]+\{[^}]*\}/g,'').replace(/[\\\{\}]/g,'').trim())], num);
-      } catch(e) {
-        // fallback: plain centered paragraph
-        console.warn('Math build failed for:', latex, e);
-        return new D.Paragraph({
-          children: [new D.TextRun({ text: latex, font: 'Cambria Math', size: bodySize, italics: true })],
-          alignment: D.AlignmentType.CENTER,
-          spacing: { before: 180, after: 180 }
-        });
+        const next$ = text.indexOf('$', i);
+        const chunk = next$ === -1 ? text.slice(i) : text.slice(i, next$);
+        if (chunk) segs.push({ math: false, s: chunk });
+        if (next$ === -1) break;
+        i = next$;
       }
+      return segs;
+    }
+
+    /**
+     * Build a body paragraph whose text may contain inline LaTeX ($...$).
+     * Math spans are converted to Word OMML; plain text becomes TextRun.
+     */
+    function mkParaWithMath(text) {
+      const segs = parseMathSegments(text);
+      const children = [];
+      for (const seg of segs) {
+        if (seg.math) {
+          const omml = latexToOmml(seg.s);
+          if (omml.length) children.push(new D.Math({ children: omml }));
+        } else {
+          if (seg.s) children.push(new D.TextRun({ text: seg.s, font: bodyFontName, size: bodySize }));
+        }
+      }
+      return new D.Paragraph({
+        children,
+        spacing: { line: bodyLhTwips },
+        indent: { firstLine: bodySize * 20 }
+      });
     }
 
     // ── traverse DOM to build docx children ──
@@ -1064,8 +1084,7 @@ async function exportToDocx() {
           }));
           break;
         case 'para':
-          // Split by inline math markers ($...$) — treat as plain text (math in inline)
-          docChildren.push(mkPara(stripInlineMath(item.text)));
+          docChildren.push(mkParaWithMath(item.text));
           break;
         case 'kw':
           docChildren.push(new D.Paragraph({
