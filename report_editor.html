@@ -895,7 +895,8 @@ async function exportToDocx() {
         const ommlChar = ACCENT_MAP[accentChar] || accentChar;
         const acc   = new D.XmlComponent('m:acc');
         const accPr = new D.XmlComponent('m:accPr');
-        // U+0302 (^) is the OMML default accent — omit chr to keep default
+        // U+0302 (^) is the OMML default accent per ECMA-376 §22.1.2.5 (m:accPr/m:chr)
+        // — omit chr element to keep the default (hat) so Word renders it correctly
         if (ommlChar !== '\u0302') {
           accPr.root.push(new D.MathAccentCharacter(ommlChar));
         }
