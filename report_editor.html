@@ -1032,8 +1032,8 @@ async function exportToDocx() {
         }
 
         case 'semantics':
-          // Only process the first child (skip <annotation>)
-          return node.children[0] ? childOmml(node.children[0]) : [];
+          // Delegate to mathmlNodeToOmml (not childOmml) so that mrow/fence detection runs
+          return node.children[0] ? mathmlNodeToOmml(node.children[0]) : [];
 
         case 'annotation':
         case 'annotation-xml':
