@@ -855,6 +855,137 @@ async function exportToDocx() {
 
     // ── LaTeX → OMML conversion via KaTeX MathML ──────────────
 
+    // Map KaTeX accent characters → OMML combining characters
+    const ACCENT_MAP = {
+      '\u007e': '\u0303', // ~ tilde           → U+0303 COMBINING TILDE
+      '\u005e': '\u0302', // ^ circumflex       → U+0302 COMBINING CIRCUMFLEX ACCENT
+      '\u02c9': '\u0304', // ˉ modifier macron  → U+0304 COMBINING MACRON
+      '\u00af': '\u0304', // ¯ macron           → U+0304
+      '\u0305': '\u0305', // combining overline → keep as-is
+      '\u02d9': '\u0307', // ˙ dot above        → U+0307 COMBINING DOT ABOVE
+      '\u00a8': '\u0308', // ¨ diaeresis        → U+0308 COMBINING DIAERESIS
+      '\u0060': '\u0300', // ` grave            → U+0300 COMBINING GRAVE ACCENT
+      '\u00b4': '\u0301', // ´ acute            → U+0301 COMBINING ACUTE ACCENT
+      '\u02d8': '\u0306', // ˘ breve            → U+0306 COMBINING BREVE
+      '\u02c7': '\u030c', // ˇ caron            → U+030C COMBINING CARON
+      '\u2192': '\u20d7', // → right arrow      → U+20D7 COMBINING RIGHT ARROW ABOVE
+      '\u20d7': '\u20d7', // combining arrow    → keep as-is
+    };
+
+    /** True when an element node is a fence <mo> (from \left, \right, \middle). */
+    function isFenceMo(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      const tag = el.tagName.toLowerCase().replace(/^[a-z0-9]+:/, '');
+      return tag === 'mo' && el.getAttribute('fence') === 'true';
+    }
+
+    /** All childNodes of `parent` strictly between `startEl` and `endEl`. */
+    function nodesBetween(parent, startEl, endEl) {
+      const all = Array.from(parent.childNodes);
+      const a = all.indexOf(startEl), b = all.indexOf(endEl);
+      return (a >= 0 && b > a) ? all.slice(a + 1, b) : [];
+    }
+
+    /**
+     * Build an OMML accent element <m:acc> for a KaTeX <mover accent="true"> node.
+     * Uses D.XmlComponent + D.MathAccentCharacter + D.MathBase (all exported by docx 8.x).
+     */
+    function buildAccent(accentChar, baseChildren) {
+      try {
+        const ommlChar = ACCENT_MAP[accentChar] || accentChar;
+        const acc   = new D.XmlComponent('m:acc');
+        const accPr = new D.XmlComponent('m:accPr');
+        // U+0302 (^) is the OMML default accent — omit chr to keep default
+        if (ommlChar !== '\u0302') {
+          accPr.root.push(new D.MathAccentCharacter(ommlChar));
+        }
+        if (accPr.root.length) acc.root.push(accPr);
+        acc.root.push(new D.MathBase(baseChildren));
+        return acc;
+      } catch(e) {
+        console.warn('buildAccent failed, falling back to superscript:', e);
+        return new D.MathSuperScript({ children: baseChildren, superScript: [new D.MathRun(accentChar)] });
+      }
+    }
+
+    /**
+     * Build an OMML <m:d> delimiter element.
+     * `parts` is an array of OMML-element arrays (one per separator-delimited section).
+     * OMML defaults: begChr=(  endChr=)  sepChr=|
+     */
+    function mkDelimiter(begChar, sepChar, endChar, parts) {
+      // Use docx.js bracket classes for common single-part cases (no separator)
+      if (parts.length === 1 && sepChar === null) {
+        const c = parts[0];
+        if (begChar === '(' && endChar === ')') return new D.MathRoundBrackets({ children: c });
+        if (begChar === '[' && endChar === ']') return new D.MathSquareBrackets({ children: c });
+        if (begChar === '{' && endChar === '}') return new D.MathCurlyBrackets({ children: c });
+      }
+
+      // General case: build raw <m:d> with explicit dPr
+      const d   = new D.XmlComponent('m:d');
+      const dPr = new D.XmlComponent('m:dPr');
+
+      if (begChar !== '(') {
+        const e = new D.XmlComponent('m:begChr');
+        e.root.push({ _attr: { 'm:val': begChar } });
+        dPr.root.push(e);
+      }
+      if (sepChar !== null && sepChar !== '|') {
+        const e = new D.XmlComponent('m:sepChr');
+        e.root.push({ _attr: { 'm:val': sepChar } });
+        dPr.root.push(e);
+      }
+      if (endChar !== ')') {
+        const e = new D.XmlComponent('m:endChr');
+        e.root.push({ _attr: { 'm:val': endChar } });
+        dPr.root.push(e);
+      }
+      if (dPr.root.length) d.root.push(dPr);
+      for (const p of parts) d.root.push(new D.MathBase(p));
+      return d;
+    }
+
+    /**
+     * Detect fenced <mrow> (from \left...\right) and build a proper OMML delimiter.
+     * Returns null if the mrow is not a fenced expression.
+     */
+    function tryFencedMrow(node) {
+      const childEls = Array.from(node.children);
+      if (childEls.length < 2) return null;
+      if (!isFenceMo(childEls[0]) || !isFenceMo(childEls[childEls.length - 1])) return null;
+
+      const begChar = childEls[0].textContent;
+      const endChar = childEls[childEls.length - 1].textContent;
+
+      // Middle fence elements (from \middle) become separators
+      const innerEls = childEls.slice(1, -1);
+      const middleFences = innerEls.filter(isFenceMo);
+      const innerNodes  = nodesBetween(node, childEls[0], childEls[childEls.length - 1]);
+
+      if (middleFences.length === 0) {
+        // No separator — simple bracket
+        const content = innerNodes.flatMap(n => mathmlNodeToOmml(n));
+        return mkDelimiter(begChar, null, endChar, [content]);
+      }
+
+      // Split inner content at each middle fence
+      const parts = [];
+      let current = [];
+      for (const n of innerNodes) {
+        if (n.nodeType === Node.ELEMENT_NODE && isFenceMo(n) && middleFences.includes(n)) {
+          parts.push(current);
+          current = [];
+        } else {
+          current.push(...mathmlNodeToOmml(n));
+        }
+      }
+      parts.push(current);
+
+      const sepChar = middleFences[0].textContent;
+      return mkDelimiter(begChar, sepChar, endChar, parts);
+    }
+
     /**
      * Recursively convert a MathML DOM node to an array of docx OMML elements.
      */
@@ -878,13 +1009,26 @@ async function exportToDocx() {
 
       switch (tag) {
         case 'math':
-        case 'mrow':
         case 'mstyle':
         case 'mpadded':
         case 'merror':
         case 'mphantom':
-        case 'mfenced':
           return childOmml(node);
+
+        case 'mrow': {
+          const fenced = tryFencedMrow(node);
+          if (fenced) return [fenced];
+          return childOmml(node);
+        }
+
+        case 'mfenced': {
+          // Handle deprecated <mfenced> (not produced by KaTeX 0.16 but may appear elsewhere)
+          const open = node.getAttribute('open') ?? '(';
+          const close = node.getAttribute('close') ?? ')';
+          const seps  = node.getAttribute('separators') ?? ',';
+          const sep   = seps[0] ?? null;
+          return [mkDelimiter(open, sep, close, [childOmml(node)])];
+        }
 
         case 'semantics':
           // Only process the first child (skip <annotation>)
@@ -923,12 +1067,23 @@ async function exportToDocx() {
         case 'msubsup':
           return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
 
-        case 'mover':
-          // Treat as superscript (covers \hat, \widetilde, limits etc.)
+        case 'mover': {
+          // accent="true" marks diacritic accents (\widetilde, \hat, \bar, …)
+          if (node.getAttribute('accent') === 'true') {
+            const accentChar = node.children[1]?.textContent ?? '';
+            return [buildAccent(accentChar, nth(0))];
+          }
+          // Non-accent mover: treat as superscript (limit notation, etc.)
           return [new D.MathSuperScript({ children: nth(0), superScript: nth(1) })];
+        }
 
-        case 'munder':
+        case 'munder': {
+          if (node.getAttribute('accentunder') === 'true') {
+            // Underaccent — approximate as subscript
+            return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+          }
           return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+        }
 
         case 'munderover':
           return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
