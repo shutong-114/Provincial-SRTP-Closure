@@ -1347,15 +1347,22 @@ async function exportToDocx() {
     }
 
     /**
-     * Convert a base64 data-URL (data:image/...;base64,...) or plain base64 string
+     * Convert an image source (data-URL, plain base64 string, or http(s) URL)
      * to a Uint8Array suitable for docx.js ImageRun.
      */
-    function b64ToUint8(b64src) {
-      const b64 = b64src.includes(',') ? b64src.split(',')[1] : b64src;
-      const bin = atob(b64);
-      const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      return arr;
+    async function b64ToUint8(src) {
+      if (!src) return null;
+      if (!src.startsWith('http')) {
+        const b64 = src.includes(',') ? src.split(',')[1] : src;
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return arr;
+      }
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
+      const buf = await response.arrayBuffer();
+      return new Uint8Array(buf);
     }
 
     /**
@@ -1363,8 +1370,9 @@ async function exportToDocx() {
      * widthPt / heightPt are in points (1pt = 12700 EMU in docx.js).
      * caption is an optional string placed below the image.
      */
-    function buildImagePara(src, widthPt, heightPt, caption) {
-      const imgData = b64ToUint8(src);
+    async function buildImagePara(src, widthPt, heightPt, caption) {
+      const imgData = await b64ToUint8(src);
+      if (!imgData) return [];
       const imageRun = new D.ImageRun({
         data: imgData,
         transformation: { width: widthPt, height: heightPt }
@@ -1453,7 +1461,7 @@ async function exportToDocx() {
           // img item: { type:'img', src: 'data:image/jpeg;base64,...', caption:'...', widthPt:440, heightPt:330 }
           const wPt = item.widthPt || 400;
           const hPt = item.heightPt || Math.round(wPt * 0.75);
-          const paras = buildImagePara(item.src, wPt, hPt, item.caption || '');
+          const paras = await buildImagePara(item.src, wPt, hPt, item.caption || '');
           docChildren.push(...paras);
           break;
         }
