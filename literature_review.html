@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文献综述</title>
+  <style>
+    body { font-family: "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif; line-height: 1.8; margin: 32px; color: #222; }
+    h1 { text-align: center; margin-bottom: 24px; }
+    h2 { margin-top: 24px; }
+    .refs { margin-top: 24px; }
+    ol { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h1>文献综述</h1>
+
+  <p>
+    多机器人系统在物流仓储、环境监测、搜索救援和自动化运输等场景中需求迅速增长，关键问题在于群体机器人在保持编队形状的同时穿越障碍密集环境。相关研究主要聚焦于全局路径规划、局部安全引导、编队优化与分布式协同、以及多机避碰与覆盖等方向。本综述结合引言内容与参考文献，对上述研究脉络进行归纳。
+  </p>
+
+  <h2>1. 全局路径规划与安全引导</h2>
+  <p>
+    A*算法是路径规划的基础框架，其启发式最短路思想由经典工作奠定[16]，并在三维/水下与移动机器人等场景中得到扩展[1][2]。为了提升路径对障碍的安全裕度，研究者在代价函数中引入与障碍距离相关的惩罚项，形成安全增强型A*思路[3]。与此同时，Voronoi相关拓扑结构为路径提供更高的几何安全性与鲁棒性：从基于Voronoi图的无碰撞A*改进[4]，到融合加权Voronoi与A*的规划策略[5]，再到面向机器人场景的高效广义Voronoi构建[6]，均强调通过拓扑骨架提升规划稳定性。功率图方法进一步提供了凸无碰撞区域构造机制，可作为局部安全引导的重要前驱[7]，而其在应用层面的丰富性也在综述性研究中得到讨论[8]。
+  </p>
+
+  <h2>2. 编队优化与分布式协同</h2>
+  <p>
+    编队控制研究中，形状理论为编队约束线性化与凸优化建模提供了基础[9]，使“保持形状+满足约束”的问题可被统一处理。投影型最优编队算法在集中式场景下给出高效求解路径[10]，随后研究进一步引入网络拉普拉斯矩阵，实现面向多机器人系统的分布式优化框架[11]。在此基础上，使用局部估计器的分布式投影算法[19]显著降低了通信依赖，为大规模编队优化提供可扩展解法。这一演进路径与引言中“局部自由空间约束下编队优化”的研究思路保持一致。
+  </p>
+
+  <h2>3. 多机避碰与运动协调</h2>
+  <p>
+    在多机器人密集场景中，实时避碰是维持群体可行性的关键。基于RVO的避碰框架为多机协同提供了高效且分散的机制，相关工作包含V-RVO及其Voronoi融合方案[12]、改进型混合RVO[13]，以及引入行为学与优先级策略的RVO扩展[14][15]。同时，速度障碍方法在编队控制领域亦有应用，体现为速度障碍驱动的分布式避碰与队形保持[18]。这些研究共同说明：局部避碰层与全局/局部规划层的协同，是提升系统稳定性的必要条件。
+  </p>
+
+  <h2>4. 覆盖任务与应用拓展</h2>
+  <p>
+    面向覆盖与巡检类任务，覆盖路径规划已形成稳定的研究体系。早期综述工作系统梳理了机器人覆盖问题的结构与解法[20]，而面向多机器人协作的覆盖路径改进研究进一步强调了效率与可扩展性[21]。这些成果为编队在区域覆盖场景的应用提供了可借鉴的框架，与引言中“编队覆盖任务拓展”的研究方向契合。
+  </p>
+
+  <h2>5. 小结</h2>
+  <p>
+    综上，现有研究从A*及其安全增强策略、Voronoi/功率图的几何结构、编队优化的集中式与分布式方法、RVO系列避碰机制以及覆盖任务应用等方面形成了系统化成果。引言中提出的“局部自由空间约束下的最优编队”与“分布式优化扩展”正是对这些研究脉络的综合与深化，为多机器人在复杂环境中的协同导航提供了更完备的解决路径。
+  </p>
+
+  <h2 class="refs">参考文献</h2>
+  <ol>
+    <li>Y. Yang and Q. Cai, "Research on the a-star algorithm based on path finding," in 2023 IEEE 3rd Int. Conf. on Data Science and Computer Application (ICDSCA). IEEE, 2023, pp. 199–202.</li>
+    <li>M. Li and H. Zhang, "AUV 3D path planning based on A* algorithm," in 2020 Chinese Automation Congress (CAC). IEEE, 2020, pp. 11–16.</li>
+    <li>B. Cao, Z. Yang, L. Yu, and Y. Zhang, "Research on the star algorithm for safe path planning," in 2023 IEEE Int. Conf. on Control, Electronics and Computer Technology (ICCECT). IEEE, 2023, pp. 105–109.</li>
+    <li>S.-L. Ho et al., "Voronoi diagram based collision-free A* algorithm for mobile vehicle in complex dynamic environment," in 2022 IEEE Int. Conf. on Consumer Electronics-Taiwan. IEEE, 2022, pp. 429–430.</li>
+    <li>Z. Liu et al., "Fusion of weighted Voronoi diagram and A* algorithm for mobile robot path planning," in 2022 ICEEMT. IEEE, 2022, pp. 403–406.</li>
+    <li>H. Tian et al., "Clean generalized Voronoi diagram: An efficient algorithm for path planning in robotics," in 2025 IEEE ICMA. IEEE, 2025, pp. 759–763.</li>
+    <li>O. Arslan and D. E. Koditschek, "Exact robot navigation using power diagrams," in 2016 IEEE ICRA. IEEE, 2016, pp. 1–8.</li>
+    <li>K. Sugihara, "Why are Voronoi diagrams so fruitful in application?" in 2011 Eighth Int. Symp. on Voronoi Diagrams. IEEE, 2011, pp. 14–14.</li>
+    <li>E. Montijano and A. R. Mosteo, "Efficient multi-robot formations using distributed optimization," in 53rd IEEE CDC. IEEE, 2014, pp. 6167–6172.</li>
+    <li>Q. Liu and M. Wang, "A projection-based algorithm for optimal formation and optimal matching of multi-robot system," Nonlinear Dynamics, vol. 104, no. 1, pp. 439–450, 2021.</li>
+    <li>J. Huang, S. Zhou, H. Tu, Y. Yao, and Q. Liu, "Distributed optimization algorithm for multi-robot formation with virtual reference center," IEEE/CAA J. Automatica Sinica, vol. 9, no. 4, pp. 732–734, 2022.</li>
+    <li>S. H. Arul and D. Manocha, "V-RVO: Decentralized multi-agent collision avoidance using Voronoi diagrams and reciprocal velocity obstacles," in 2021 IEEE/RSJ IROS. IEEE, 2021, pp. 8097–8104.</li>
+    <li>M. Sainte Catherine and E. Lucet, "A modified hybrid reciprocal velocity obstacles approach for multi-robot motion planning without communication," in 2020 IEEE/RSJ IROS. IEEE, 2020, pp. 5708–5714.</li>
+    <li>M. Fachri, M. Hariadi, and S. M. S. Nugroho, "Emotional reciprocal velocity obstacles for leader-following: A velocity obstacles based steering behavior," IEEE Access, 2024.</li>
+    <li>M. Fachri et al., "Level of priority based leader-following behavior using reciprocal velocity obstacles in multi-agents navigation," in 2021 ISMODE. IEEE, 2022, pp. 45–50.</li>
+    <li>P. E. Hart, N. J. Nilsson, and B. Raphael, "A formal basis for the heuristic determination of minimum cost paths," IEEE Trans. Syst. Sci. Cybern., vol. 4, no. 2, pp. 100–107, 1968.</li>
+    <li>Q. Liu and K. Li, "A continuous-time algorithm based on multi-agent system for distributed least absolute deviation subject to hybrid constraints," in IECON 2017. IEEE, 2017, pp. 7381–7386.</li>
+    <li>Y. Hu, H. Yu, Y. Zhong, and Y. Lv, "Distributed collision-avoidance formation control: A velocity obstacle-based approach," in 2019 IEEE SSCI. IEEE, 2019, pp. 1994–2000.</li>
+    <li>Y. Yue, Q. Liu, and Z. Zhang, "A distributed projection-based algorithm with local estimators for optimal formation of multi-robot system," in ICONIP 2023, LNCS 14447. Springer, 2024, pp. 344–355.</li>
+    <li>H. Choset, "Coverage for robotics: A survey of recent results," Ann. Math. Artif. Intell., vol. 31, pp. 113–126, 2001.</li>
+    <li>P. A. Jimenez et al., "Improving path planning for multi-robot coverage tasks," in 2007 IEEE/ASME Int. Conf. on Advanced Intelligent Mechatronics. IEEE, 2007, pp. 1–6.</li>
+  </ol>
+</body>
+</html>
