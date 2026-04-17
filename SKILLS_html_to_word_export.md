@@ -625,3 +625,166 @@ Word 最终效果：
 - OMML 默认 `m:sepChr` 是 `|`，但单段 `<m:e>` 时 sepChr 无实际渲染影响
 - `\\[4pt]` 等行间距修饰：KaTeX 生成 `mspace` 节点，被已有 `mspace` → `\u00a0` 处理；行间距微调在 OMML 中可通过 `<m:eqArrPr>` 的 `<m:lineSp>` 实现（当前版本未实现）
 - 嵌套多行（如 `\begin{cases}` 内含 `\begin{aligned}`）：递归调用 `mathmlNodeToOmml` 自然处理
+
+---
+
+## 十二、图片（Image）内容块支持
+
+### 12.1 CONTENT 数据结构
+
+```js
+{
+  type: 'img',
+  src: 'data:image/jpeg;base64,/9j/4AAQ…',  // base64 data URL（JPEG / PNG）
+  caption: '图1. 仿真轨迹示意图。',           // 可选图注
+  widthPt: 440,    // 展示宽度（pt），用于 HTML max-width 和 docx ImageRun
+  heightPt: 329,   // 对应高度（pt），保持纵横比
+}
+```
+
+> `src` 推荐使用 `data:image/jpeg;base64,…` 格式，完全内嵌在 HTML 文件中，无需外部依赖。
+> 使用 Python `base64.b64encode(raw).decode()` 生成，再拼接前缀即可。
+
+### 12.2 HTML 渲染（renderContent）
+
+```js
+case 'img': {
+  const cap  = item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : '';
+  const style = item.widthPt ? ` style="max-width:${item.widthPt}pt"` : '';
+  html += `<figure class="df-figure">
+    <img src="${item.src}"${style} alt="${escAttr(item.caption || '')}">
+    ${cap}
+  </figure>`;
+  break;
+}
+```
+
+**CSS 样式**：
+
+```css
+.df-figure {
+  display: block; margin: 14pt auto; text-align: center;
+}
+.df-figure img {
+  max-width: 100%; height: auto; display: block; margin: 0 auto;
+}
+.df-figure figcaption {
+  font-family: var(--body-font); font-size: var(--body-size);
+  line-height: var(--body-lh); color: #333;
+  margin-top: 5pt; text-align: center;
+}
+```
+
+### 12.3 DOCX 导出（exportToDocx）
+
+```js
+/** base64 data URL → Uint8Array（docx.js ImageRun 需要 ArrayBuffer/Uint8Array） */
+function b64ToUint8(b64src) {
+  const b64 = b64src.includes(',') ? b64src.split(',')[1] : b64src;
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+/**
+ * Build [imgParagraph, captionParagraph] for a data-URL image.
+ * widthPt / heightPt are in pt (docx.js ImageRun uses pt natively via transformation).
+ */
+function buildImagePara(src, widthPt, heightPt, caption) {
+  const imageRun = new D.ImageRun({
+    data: b64ToUint8(src),
+    transformation: { width: widthPt, height: heightPt }
+  });
+  const imgPara = new D.Paragraph({
+    children: [imageRun],
+    alignment: D.AlignmentType.CENTER,
+    spacing: { before: 120, after: caption ? 60 : 180 }
+  });
+  if (!caption) return [imgPara];
+  const capPara = new D.Paragraph({
+    children: [new D.TextRun({ text: caption, font: bodyFontName, size: bodySize, italics: true })],
+    alignment: D.AlignmentType.CENTER,
+    spacing: { after: 180 }
+  });
+  return [imgPara, capPara];
+}
+```
+
+在 `switch(item.type)` 中：
+
+```js
+case 'img': {
+  const wPt = item.widthPt || 400;
+  const hPt = item.heightPt || Math.round(wPt * 0.75);
+  docChildren.push(...buildImagePara(item.src, wPt, hPt, item.caption || ''));
+  break;
+}
+```
+
+> **docx.js 版本注意**：`ImageRun` 的 `transformation` 属性在 docx.js 7.x 和 8.x 中均支持 pt 单位（内部自动转换为 EMU：1pt = 12700 EMU）。
+> 如需 EMU 单位，手动换算：`widthEMU = widthPt * 12700`。
+
+### 12.4 如何从 PDF 提取仿真图片（Python）
+
+```python
+import fitz   # pip install pymupdf
+import base64
+from PIL import Image
+from io import BytesIO
+
+def extract_and_encode(pdf_path, page_idx, clip_rect, scale=2.2, quality=85):
+    """提取 PDF 特定页面的裁切区域，返回 base64 JPEG 字符串和尺寸。"""
+    doc = fitz.open(pdf_path)
+    page = doc[page_idx]
+    clip = fitz.Rect(*clip_rect)       # (x0, y0, x1, y1) in points
+    mat  = fitz.Matrix(scale, scale)   # 放大倍率
+    pix  = page.get_pixmap(matrix=mat, clip=clip)
+
+    img = Image.open(BytesIO(pix.tobytes('png'))).convert('RGB')
+    if img.width > 1200:               # 限制最大宽度节省体积
+        h = round(img.height * 1200 / img.width)
+        img = img.resize((1200, h), Image.LANCZOS)
+
+    buf = BytesIO()
+    img.save(buf, 'JPEG', quality=quality)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f'data:image/jpeg;base64,{b64}', img.size
+
+# 示例：提取论文第5页（索引4）上半部分的仿真轨迹图
+src, (w, h) = extract_and_encode(
+    'paper.pdf', page_idx=4,
+    clip_rect=(0, 10, 612, 468),       # PDF坐标（pt），A4宽612pt
+    scale=2.2, quality=85
+)
+# 目标宽度440pt，等比例高度
+target_w = 440
+target_h = round(target_w * h / w)
+entry = f"{{type:'img',src:'{src}',caption:'图1. ...',widthPt:{target_w},heightPt:{target_h}}}"
+```
+
+### 12.5 从 DOCX 提取图片（Python）
+
+```python
+import zipfile, base64
+from PIL import Image
+from io import BytesIO
+
+def extract_from_docx(docx_path, max_w=1100, quality=82):
+    """从 .docx 文件中提取所有嵌入图片，返回 [(data_url, (w, h)), ...] 列表。"""
+    results = []
+    with zipfile.ZipFile(docx_path) as z:
+        media = sorted(n for n in z.namelist() if n.startswith('word/media/'))
+        for name in media:
+            raw = z.read(name)
+            img = Image.open(BytesIO(raw)).convert('RGB')
+            if img.width > max_w:
+                h = round(img.height * max_w / img.width)
+                img = img.resize((max_w, h), Image.LANCZOS)
+            buf = BytesIO()
+            img.save(buf, 'JPEG', quality=quality)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            results.append((f'data:image/jpeg;base64,{b64}', img.size))
+    return results
+```
+
