@@ -766,6 +766,9 @@ src, (w, h) = extract_and_encode(
     clip_rect=(0, 10, 612, 468),       # PDF坐标（pt），A4宽612pt
     scale=2.2, quality=85
 )
+# 说明：clip_rect 使用 PDF 点坐标（1pt = 1/72 inch）。
+# 可先用 page.rect 获取页面尺寸，再在 PDF 查看器中测量目标区域，
+# 或先导出整页图像后在图像编辑器中读出像素范围，再按比例换算为 pt。
 # 目标宽度440pt，等比例高度
 target_w = 440
 target_h = round(target_w * h / w)
