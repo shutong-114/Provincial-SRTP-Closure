@@ -983,6 +983,40 @@ async function exportToDocx() {
     }
 
     /**
+     * Build an OMML <m:eqArr> equation-array element.
+     * `rowContents` is an array of OMML-element arrays, one per row.
+     * Used for \begin{cases}, \begin{aligned}, \begin{align}, etc.
+     */
+    function buildEqArr(rowContents) {
+      const eqArr = new D.XmlComponent('m:eqArr');
+      for (const rowContent of rowContents) {
+        const e = new D.XmlComponent('m:e');
+        e.root.push(...rowContent);
+        eqArr.root.push(e);
+      }
+      return eqArr;
+    }
+
+    /**
+     * Build an OMML <m:m> matrix element.
+     * `rows2d` is an array of rows; each row is an array of cell OMML-element arrays.
+     * Used for \begin{pmatrix}, \begin{bmatrix}, etc. (multi-column tables inside fences).
+     */
+    function buildMatrix(rows2d) {
+      const m = new D.XmlComponent('m:m');
+      for (const cells of rows2d) {
+        const mr = new D.XmlComponent('m:mr');
+        for (const cell of cells) {
+          const e = new D.XmlComponent('m:e');
+          e.root.push(...cell);
+          mr.root.push(e);
+        }
+        m.root.push(mr);
+      }
+      return m;
+    }
+
+    /**
      * Detect fenced <mrow> (from \left...\right) and build a proper OMML delimiter.
      * Returns null if the mrow is not a fenced expression.
      */
@@ -1000,7 +1034,33 @@ async function exportToDocx() {
       const innerNodes  = nodesBetween(node, childEls[0], childEls[childEls.length - 1]);
 
       if (middleFences.length === 0) {
-        // No separator — simple bracket
+        // Detect single inner <mtable> → route to eqArr or matrix
+        const innerEls = innerNodes.filter(n => n.nodeType === Node.ELEMENT_NODE);
+        if (innerEls.length === 1) {
+          const innerTag = innerEls[0].tagName.toLowerCase().replace(/^[a-z0-9]+:/, '');
+          if (innerTag === 'mtable') {
+            const mtbl = innerEls[0];
+            // Convert each <mtd> cell to OMML
+            const rows2d = Array.from(mtbl.children).map(mtr =>
+              Array.from(mtr.children).map(mtd => {
+                const out = [];
+                for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
+                return out;
+              })
+            );
+            const maxCols = rows2d.length > 0 ? Math.max(...rows2d.map(r => r.length)) : 1;
+            // Multi-column table inside ( or [ → proper OMML matrix
+            const isMatrixFence = '(['.includes(begChar) && '([)\\u2016'.includes(endChar);
+            if (maxCols > 1 && isMatrixFence) {
+              return mkDelimiter(begChar, null, endChar, [[buildMatrix(rows2d)]]);
+            } else {
+              // cases / aligned / etc. → eqArr inside delimiter
+              const rowContents = rows2d.map(r => r.flat());
+              return mkDelimiter(begChar, null, endChar, [[buildEqArr(rowContents)]]);
+            }
+          }
+        }
+        // No special table: standard content inside delimiter
         const content = innerNodes.flatMap(n => mathmlNodeToOmml(n));
         return mkDelimiter(begChar, null, endChar, [content]);
       }
@@ -1125,11 +1185,20 @@ async function exportToDocx() {
           return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
 
         case 'mtable': {
-          // Flatten table rows (covers \begin{cases}, \begin{pmatrix}, etc.)
-          const rows = Array.from(node.children).map(tr => childOmml(tr));
-          const out = [];
-          rows.forEach((r, i) => { if (i > 0) out.push(new D.MathRun(';  ')); out.push(...r); });
-          return out;
+          // Standalone <mtable> (e.g. \begin{aligned}, \begin{align}, \begin{gather}).
+          // Tables inside fences (\begin{cases}, \begin{pmatrix}, etc.) are handled
+          // in tryFencedMrow before this code is reached.
+          const rows2d = Array.from(node.children).map(mtr =>
+            Array.from(mtr.children).map(mtd => {
+              const out = [];
+              for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
+              return out;
+            })
+          );
+          if (rows2d.length === 0) return [];
+          // Concatenate cells within each row (handles multi-column align environments)
+          const rowContents = rows2d.map(r => r.flat());
+          return [buildEqArr(rowContents)];
         }
 
         case 'mtr':

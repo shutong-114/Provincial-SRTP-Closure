@@ -467,12 +467,161 @@ async function exportDocx() {
 | 定积分上下限 `\munderover` | `<munderover>` | `MathSubSuperScript` | ✅ |
 | `\left...\right` 定界符 | `<mrow>` with fence mo | `m:d` via XmlComponent | ✅ |
 | `\middle` | fence mo 中间节点 | 多段 `m:d` | ✅ |
-| 矩阵 `pmatrix/bmatrix` | `<mrow>+<mtable>` | 定界符 + 行文本拼接 | ⚠️ |
-| cases 环境 | `<mtable>` | 行文本拼接（无真正矩阵）| ⚠️ |
+| 矩阵 `pmatrix/bmatrix` | `<mrow>+<mtable>` (多列) | `m:m` via XmlComponent（在 tryFencedMrow 检测）| ✅ |
+| cases 环境 | `<mrow fence={>+<mtable>` (单列) | `m:eqArr` via XmlComponent（换行分行）| ✅ |
+| align/aligned 环境 | 独立 `<mtable>` | `m:eqArr`（多列单元格合并后换行）| ✅ |
 | 文本 `\text{}` | `<mtext>` | `MathRun` | ✅ |
 | 空白 `\;` 等 | `<mspace>` | `MathRun('\u00a0')` | ✅ |
 | 希腊字母 | `<mi>` | `MathRun`（直接 Unicode）| ✅ |
 | 运算符 `+−×÷` 等 | `<mo>` | `MathRun` | ✅ |
 
-> ⚠️ = 功能性降级，输出可读但非完美排版（矩阵无网格、极限无正确位置）。
-> Word 的 OMML 矩阵（`<m:m>`）需要更复杂的构建逻辑，可在后续版本中完善。
+> ⚠️ = 功能性降级，输出可读但非完美排版。
+> Word 的 OMML `<m:m>` 矩阵与 `<m:eqArr>` 方程数组已完整实现（见第十一节）。
+
+---
+
+## 十一、多行公式自动分行（m:eqArr / m:m）
+
+### 11.1 问题背景
+
+LaTeX 的 `\begin{cases}` / `\begin{aligned}` / `\begin{align}` 等多行环境，
+KaTeX 将其渲染为 `<mtable>` 结构（MathML 表格）。  
+若直接把各行用分号拼成一行，则 Word 导出后公式失去换行结构，排版混乱。
+
+### 11.2 OMML 多行元素
+
+| OMML 元素 | 用途 | 对应 LaTeX 环境 |
+|---|---|---|
+| `<m:eqArr>` | 方程数组（每行独立换行） | `cases`, `aligned`, `align`, `gather` |
+| `<m:m>` | 矩阵（行+列） | `pmatrix`, `bmatrix`, `vmatrix`, etc. |
+
+**eqArr 结构**：
+```xml
+<m:eqArr>
+  <m:e><!-- 第1行内容 --></m:e>
+  <m:e><!-- 第2行内容 --></m:e>
+  <m:e><!-- 第3行内容 --></m:e>
+</m:eqArr>
+```
+
+**matrix 结构**：
+```xml
+<m:m>
+  <m:mr>
+    <m:e><!-- cell(0,0) --></m:e>
+    <m:e><!-- cell(0,1) --></m:e>
+  </m:mr>
+  <m:mr>
+    <m:e><!-- cell(1,0) --></m:e>
+    <m:e><!-- cell(1,1) --></m:e>
+  </m:mr>
+</m:m>
+```
+
+### 11.3 构建函数
+
+```js
+/** 方程数组：rowContents[i] = 第i行的 OMML 元素数组 */
+function buildEqArr(rowContents) {
+  const eqArr = new D.XmlComponent('m:eqArr');
+  for (const rowContent of rowContents) {
+    const e = new D.XmlComponent('m:e');
+    e.root.push(...rowContent);
+    eqArr.root.push(e);
+  }
+  return eqArr;
+}
+
+/** 矩阵：rows2d[i][j] = 第i行第j列的 OMML 元素数组 */
+function buildMatrix(rows2d) {
+  const m = new D.XmlComponent('m:m');
+  for (const cells of rows2d) {
+    const mr = new D.XmlComponent('m:mr');
+    for (const cell of cells) {
+      const e = new D.XmlComponent('m:e');
+      e.root.push(...cell);
+      mr.root.push(e);
+    }
+    m.root.push(mr);
+  }
+  return m;
+}
+```
+
+### 11.4 分发逻辑
+
+**情形1：`<mtable>` 在 fence mrow 内（由 `tryFencedMrow` 处理）**
+
+```js
+// tryFencedMrow 中，middleFences.length === 0 分支：
+const innerEls = innerNodes.filter(n => n.nodeType === Node.ELEMENT_NODE);
+if (innerEls.length === 1 && innerTag === 'mtable') {
+  const rows2d = /* 将 mtd 内容转为 OMML 二维数组 */;
+  const maxCols = Math.max(...rows2d.map(r => r.length));
+  const isMatrixFence = '(['.includes(begChar) && '(['.includes(endChar);
+
+  if (maxCols > 1 && isMatrixFence) {
+    // pmatrix / bmatrix 等多列矩阵
+    return mkDelimiter(begChar, null, endChar, [[buildMatrix(rows2d)]]);
+  } else {
+    // cases（单列，begChar='{'）或其他单列有界环境
+    const rowContents = rows2d.map(r => r.flat());
+    return mkDelimiter(begChar, null, endChar, [[buildEqArr(rowContents)]]);
+  }
+}
+```
+
+**情形2：独立 `<mtable>`（`mathmlNodeToOmml` 的 `mtable` case）**
+
+```js
+case 'mtable': {
+  // align / aligned / gather / array 等无 fence 的多行环境
+  const rows2d = Array.from(node.children).map(mtr =>
+    Array.from(mtr.children).map(mtd => {
+      const out = [];
+      for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
+      return out;
+    })
+  );
+  if (rows2d.length === 0) return [];
+  // 多列 align 的左右对齐列合并为一行（x &= y → [x,=,y]）
+  const rowContents = rows2d.map(r => r.flat());
+  return [buildEqArr(rowContents)];
+}
+```
+
+### 11.5 cases 示例（端到端）
+
+LaTeX：`\begin{cases} q^* = \varphi(q^*) \\ Aq^* = 0 \end{cases}`
+
+KaTeX MathML（简化）：
+```xml
+<mrow>
+  <mo fence="true">{</mo>
+  <mtable>
+    <mtr><mtd><mrow>q* = φ(q*)</mrow></mtd></mtr>
+    <mtr><mtd><mrow>Aq* = 0</mrow></mtd></mtr>
+  </mtable>
+  <mo fence="true"></mo>   <!-- 空字符结尾 = 无右括号 -->
+</mrow>
+```
+
+处理流程：
+1. `mathmlNodeToOmml(mrow)` → `tryFencedMrow`  
+2. begChar=`{`，endChar=`""`（空），无中间 fence  
+3. innerEls=[mtable]，单列 → `buildEqArr` + `mkDelimiter('{', null, '', [...])`  
+4. OMML：`<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/></m:dPr><m:e><m:eqArr>...</m:eqArr></m:e></m:d>`  
+
+Word 最终效果：
+```
+⎧ q* = φ(q*)
+⎨
+⎩ Aq* = 0
+```
+
+### 11.6 注意事项
+
+- `endChar = ""` 对应 OMML `<m:endChr m:val=""/>` → Word 显示无右括号（cases 正确行为）
+- OMML 默认 `m:sepChr` 是 `|`，但单段 `<m:e>` 时 sepChr 无实际渲染影响
+- `\\[4pt]` 等行间距修饰：KaTeX 生成 `mspace` 节点，被已有 `mspace` → `\u00a0` 处理；行间距微调在 OMML 中可通过 `<m:eqArrPr>` 的 `<m:lineSp>` 实现（当前版本未实现）
+- 嵌套多行（如 `\begin{cases}` 内含 `\begin{aligned}`）：递归调用 `mathmlNodeToOmml` 自然处理
