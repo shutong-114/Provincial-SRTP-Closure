@@ -576,7 +576,7 @@ const CONTENT = [
 {type:'para', text:'其中 $\\psi$ 函数定义为：'},
 {type:'formula', latex:'\\psi(r_1^{(mn)})=\\dfrac{\\|r_1^{(mn)}\\|^2-A^2}{\\|r_1^{(mn)}\\|^2-d^2}'},
 {type:'para', text:'区域约束代价 $J_{\\text{reg}}$ 采用外罚函数形式，对越出凸多边形安全区域 $\\mathcal{LF}$ 的机器人按越界距离的平方施加惩罚，权重 $w_{\\text{reg}}$ 通常取较大值（如1000）以确保约束被严格满足。优化求解采用带动量项的梯度下降：'},
-{type:'formula', latex:'J_{\text{reg}}(X)=w_{\text{reg}}\sum_j\sum_i\bigl[\min(0, d_i(x_j))\bigr]^2,\quad d_i(x_j)=n_i^{\top}(x_j-v_i)'},
+{type:'formula', latex:'J_{\\text{reg}}(X)=w_{\\text{reg}}\\sum_j\\sum_i\\bigl[\\min(0, d_i(x_j))\\bigr]^2,\\quad d_i(x_j)=n_i^{\\top}(x_j-v_i)'},
 {type:'para', text:'其中 $n_i$ 为多边形边的外法向量，$v_i$ 为对应边上的点；当机器人越界时 $d_i<0$，惩罚项随越界距离平方增长。'},
 {type:'formula', latex:'\\Delta x^{k+1}=-\\sigma\\nabla J_{\\text{total}}(X^k)-\\eta\\,\\Delta x^k', num:'(16)'},
 {type:'para', text:'其中 $\\sigma$ 为步长，$\\eta$ 为动量系数，并通过梯度裁剪（模长上限10.0）和步长裁剪（单步上限0.5）保证数值稳定性。实验表明，该方案对初始位置不敏感，能够有效处理不规则凸多边形约束下的队形优化问题，是集中式投影算法在工程实现层面的有益补充。'},
