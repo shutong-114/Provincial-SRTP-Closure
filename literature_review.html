@@ -868,7 +868,7 @@ async function exportToDocx() {
             );
             const maxCols = rows2d.length > 0 ? Math.max(...rows2d.map(r => r.length)) : 1;
             // Multi-column table inside ( or [ → proper OMML matrix
-            const isMatrixFence = '(['.includes(begChar) && '([)\\u2016'.includes(endChar);
+            const isMatrixFence = '(['.includes(begChar) && '([)‖'.includes(endChar);
             if (maxCols > 1 && isMatrixFence) {
               return mkDelimiter(begChar, null, endChar, [[buildMatrix(rows2d)]]);
             } else {
