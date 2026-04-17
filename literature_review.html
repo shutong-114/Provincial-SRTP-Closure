@@ -1,72 +1,1392 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>东南大学多机器人系统编队导航文献综述</title>
-  <style>
-    body { font-family: "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif; line-height: 1.8; margin: 32px; color: #222; }
-    h1 { text-align: center; margin-bottom: 24px; }
-    h2 { margin-top: 24px; }
-    .refs { margin-top: 24px; }
-    ol { padding-left: 20px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文献综述编辑器 — 东南大学创新训练计划</title>
+
+<!-- KaTeX CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+
+<style>
+/* ===== RESET & BASE ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;background:#e8eaed}
+
+/* ===== TOP BAR ===== */
+#topbar{
+  height:46px;background:#1a3a6b;color:#fff;
+  display:flex;align-items:center;padding:0 16px;gap:10px;
+  flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.4);z-index:10;position:relative;
+}
+#topbar h1{font-size:14px;font-weight:600;letter-spacing:.3px}
+#topbar .subtitle{font-size:11px;color:#adc6f5;margin-left:4px}
+
+/* ===== LAYOUT ===== */
+#app{display:flex;height:calc(100vh - 46px);overflow:hidden}
+
+/* ===== SIDEBAR ===== */
+#sidebar{
+  width:272px;min-width:272px;background:#fff;
+  border-right:1px solid #dde;overflow-y:auto;
+  display:flex;flex-direction:column;
+  font-size:12px;
+}
+.sb-section{padding:10px 12px;border-bottom:1px solid #eee}
+.sb-title{
+  font-size:10.5px;font-weight:700;color:#555;
+  text-transform:uppercase;letter-spacing:.5px;
+  margin-bottom:7px;display:flex;align-items:center;gap:5px;
+}
+.sb-label{display:block;color:#444;margin-bottom:2px;font-size:11.5px}
+.sb-select{
+  width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:4px;
+  font-size:12px;color:#333;margin-bottom:7px;background:#fafafa;
+}
+.sb-select:focus{outline:none;border-color:#1a3a6b}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid2 .sb-select{margin-bottom:0}
+
+/* Template chips */
+.tpl-wrap{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px}
+.tpl{
+  padding:3px 9px;border:1.5px solid #bbb;border-radius:12px;
+  cursor:pointer;font-size:11px;white-space:nowrap;transition:.12s;
+}
+.tpl:hover{border-color:#4a7ec7;color:#1a3a6b}
+.tpl.active{border-color:#1a3a6b;background:#1a3a6b;color:#fff}
+
+/* Download area */
+.dl-area{margin-top:auto;padding:12px;border-top:1px solid #eee}
+.btn{
+  display:block;width:100%;padding:9px 0;border:none;border-radius:6px;
+  font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;
+  transition:opacity .18s;letter-spacing:.3px;
+}
+.btn:hover{opacity:.84}
+.btn:active{opacity:.7;transform:scale(.98)}
+.btn-docx{background:#1f4e79;color:#fff}
+.btn-pdf{background:#c00000;color:#fff}
+.btn:last-child{margin-bottom:0}
+
+/* ===== MAIN CONTENT ===== */
+#main{flex:1;overflow-y:auto;background:#dde1e8;padding:20px 28px}
+
+/* ===== A4 PAGE ===== */
+#document-page{
+  /* page size */
+  width:210mm;min-height:297mm;
+  margin:0 auto;
+  /* SEU margins: 上下左右2cm, 装订线左0.5cm */
+  padding:2cm 2cm 2cm 2.5cm;
+  background:#fff;
+  box-shadow:0 3px 14px rgba(0,0,0,.2);
+  position:relative;
+
+  /* === CSS VARIABLES (live-updated) === */
+  --body-font:'SimSun','宋体',serif;
+  --body-size:12pt;
+  --body-lh:1.5;
+  --h1-font:'SimHei','黑体',sans-serif;
+  --h1-size:15pt;
+  --h1-weight:bold;
+  --h1-align:center;
+  --h2-font:'SimHei','黑体',sans-serif;
+  --h2-size:14pt;
+  --h2-weight:bold;
+  --h2-align:left;
+  --h3-font:'SimSun','宋体',serif;
+  --h3-size:12pt;
+  --h3-weight:bold;
+  --h3-align:left;
+}
+
+/* Page header */
+.pg-header{
+  font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
+  display:flex;justify-content:space-between;align-items:center;
+  padding-bottom:4pt;border-bottom:.5pt solid #bbb;margin-bottom:18pt;
+}
+
+/* Content area inheriting vars */
+#doc-content{
+  font-family:var(--body-font);
+  font-size:var(--body-size);
+  line-height:var(--body-lh);
+  color:#000;
+}
+
+/* Headings */
+#doc-content .dh1{
+  font-family:var(--h1-font);font-size:var(--h1-size);
+  font-weight:var(--h1-weight);text-align:var(--h1-align);
+  margin-top:24pt;margin-bottom:12pt;
+}
+#doc-content .dh1:first-child{margin-top:0}
+#doc-content .dh2{
+  font-family:var(--h2-font);font-size:var(--h2-size);
+  font-weight:var(--h2-weight);text-align:var(--h2-align);
+  margin-top:14pt;margin-bottom:6pt;
+}
+#doc-content .dh3{
+  font-family:var(--h3-font);font-size:var(--h3-size);
+  font-weight:var(--h3-weight);text-align:var(--h3-align);
+  margin-top:10pt;margin-bottom:4pt;
+}
+
+/* Paragraphs */
+#doc-content .dp{
+  font-family:var(--body-font);font-size:var(--body-size);
+  line-height:var(--body-lh);text-indent:2em;margin-bottom:5pt;
+}
+#doc-content .dp.no-indent{text-indent:0}
+
+/* Formula blocks */
+.df-wrap{
+  display:flex;align-items:center;justify-content:center;
+  margin:9pt 0;position:relative;
+}
+.df-wrap .df-num{
+  position:absolute;right:0;
+  font-family:var(--body-font);font-size:var(--body-size);
+}
+.df-inner{text-align:center}
+
+/* Figure / image blocks */
+.df-figure{
+  display:block;margin:14pt auto;text-align:center;
+}
+.df-figure img{
+  max-width:100%;height:auto;display:block;margin:0 auto;
+  border:0;
+}
+.df-figure figcaption{
+  font-family:var(--body-font);font-size:var(--body-size);
+  line-height:var(--body-lh);color:#333;margin-top:5pt;
+  text-align:center;
+}
+
+/* Keywords line */
+.dkw{
+  font-family:var(--body-font);font-size:var(--body-size);
+  line-height:var(--body-lh);margin-top:8pt;
+}
+.dkw b{font-weight:bold}
+
+/* Reference items */
+.dref{
+  font-family:var(--body-font);font-size:var(--body-size);
+  line-height:var(--body-lh);
+  text-indent:-2em;padding-left:2em;
+  margin-bottom:4pt;
+}
+
+/* Contenteditable */
+[contenteditable]:focus{outline:2px solid #4a90e2;outline-offset:1px;background:#f5faff}
+[contenteditable]:hover:not(:focus){background:#f9f9ff}
+
+/* Notification */
+#notif{
+  position:fixed;top:60px;right:18px;
+  background:rgba(30,30,30,.92);color:#fff;
+  padding:9px 18px;border-radius:7px;font-size:12.5px;
+  z-index:9999;opacity:0;transition:opacity .25s;pointer-events:none;
+}
+#notif.show{opacity:1}
+
+/* Scrollbar */
+#sidebar::-webkit-scrollbar,#main::-webkit-scrollbar{width:6px}
+#sidebar::-webkit-scrollbar-thumb,#main::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+</style>
 </head>
 <body>
-  <h1>文献综述</h1>
 
-  <p>
-    多机器人系统在物流仓储、环境监测、搜索救援和自动化运输等场景中需求迅速增长，关键问题在于群体机器人在保持编队形状的同时穿越障碍密集环境。相关研究主要聚焦于全局路径规划、局部安全引导、编队优化与分布式协同、以及多机避碰与覆盖等方向。本综述结合引言内容与参考文献，对上述研究脉络进行归纳。
-  </p>
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>📄 东南大学创新训练计划 · 文献综述编辑器</h1>
+  <span class="subtitle">| 附录文献综述（可编辑导出）</span>
+</div>
 
-  <h2>1. 全局路径规划与安全引导</h2>
-  <p>
-    A*算法是路径规划的基础框架，其启发式最短路思想由经典工作奠定[16]，并在三维/水下与移动机器人等场景中得到扩展[1][2]。为了提升路径对障碍的安全裕度，研究者在代价函数中引入与障碍距离相关的惩罚项，形成安全增强型A*思路[3]。与此同时，Voronoi相关拓扑结构为路径提供更高的几何安全性与鲁棒性：从基于Voronoi图的无碰撞A*改进[4]，到融合加权Voronoi与A*的规划策略[5]，再到面向机器人场景的高效广义Voronoi构建[6]，均强调通过拓扑骨架提升规划稳定性。功率图方法进一步提供了凸无碰撞区域构造机制，可作为局部安全引导的重要前驱[7]，而其在应用层面的丰富性也在综述性研究中得到讨论[8]。
-  </p>
+<!-- APP -->
+<div id="app">
 
-  <h2>2. 编队优化与分布式协同</h2>
-  <p>
-    编队控制研究中，形状理论为编队约束线性化与凸优化建模提供了基础[9]，使“保持形状+满足约束”的问题可被统一处理。投影型最优编队算法在集中式场景下给出高效求解路径[10]，随后研究进一步引入网络拉普拉斯矩阵，实现面向多机器人系统的分布式优化框架[11]。在此基础上，使用局部估计器的分布式投影算法[19]显著降低了通信依赖，为大规模编队优化提供可扩展解法。这一演进路径与引言中“局部自由空间约束下编队优化”的研究思路保持一致。
-  </p>
+  <!-- ===== SIDEBAR ===== -->
+  <aside id="sidebar">
 
-  <h2>3. 多机避碰与运动协调</h2>
-  <p>
-    在多机器人密集场景中，实时避碰是维持群体可行性的关键。基于RVO的避碰框架为多机协同提供了高效且分散的机制，相关工作包含V-RVO及其Voronoi融合方案[12]、改进型混合RVO[13]，以及引入行为学与优先级策略的RVO扩展[14][15]。同时，速度障碍方法在编队控制领域亦有应用，体现为速度障碍驱动的分布式避碰与队形保持[18]。这些研究共同说明：局部避碰层与全局/局部规划层的协同，是提升系统稳定性的必要条件。
-  </p>
+    <!-- Templates -->
+    <div class="sb-section">
+      <div class="sb-title">📐 样式模板</div>
+      <div class="tpl-wrap" id="tpl-wrap">
+        <div class="tpl active" data-tpl="seu" onclick="loadTemplate(this)">SEU标准</div>
+        <div class="tpl" data-tpl="academic" onclick="loadTemplate(this)">学术简洁</div>
+        <div class="tpl" data-tpl="modern" onclick="loadTemplate(this)">现代简约</div>
+        <div class="tpl" data-tpl="classic" onclick="loadTemplate(this)">经典学报</div>
+      </div>
+    </div>
 
-  <h2>4. 覆盖任务与应用拓展</h2>
-  <p>
-    面向覆盖与巡检类任务，覆盖路径规划已形成稳定的研究体系。早期综述工作系统梳理了机器人覆盖问题的结构与解法[20]，而面向多机器人协作的覆盖路径改进研究进一步强调了效率与可扩展性[21]。这些成果为编队在区域覆盖场景的应用提供了可借鉴的框架，与引言中“编队覆盖任务拓展”的研究方向契合。
-  </p>
+    <!-- Body -->
+    <div class="sb-section">
+      <div class="sb-title">📝 正文样式</div>
+      <div class="sb-label">字体</div>
+      <select class="sb-select" id="s-bfont" onchange="applyStyles()">
+        <option value="'SimSun','宋体',serif" selected>宋体 SimSun</option>
+        <option value="'SimHei','黑体',sans-serif">黑体 SimHei</option>
+        <option value="'FangSong','仿宋',serif">仿宋 FangSong</option>
+        <option value="'KaiTi','楷体',serif">楷体 KaiTi</option>
+        <option value="'Times New Roman',Times,serif">Times New Roman</option>
+        <option value="Arial,Helvetica,sans-serif">Arial</option>
+      </select>
+      <div class="grid2">
+        <div>
+          <div class="sb-label">字号</div>
+          <select class="sb-select" id="s-bsize" onchange="applyStyles()">
+            <option value="10.5pt">五号 10.5pt</option>
+            <option value="12pt" selected>小四 12pt</option>
+            <option value="14pt">四号 14pt</option>
+            <option value="15pt">小三 15pt</option>
+          </select>
+        </div>
+        <div>
+          <div class="sb-label">行距倍数</div>
+          <select class="sb-select" id="s-blh" onchange="applyStyles()">
+            <option value="1.3">1.3×</option>
+            <option value="1.5" selected>1.5×</option>
+            <option value="1.7">1.7×</option>
+            <option value="2.0">2.0×</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
-  <h2>5. 小结</h2>
-  <p>
-    综上，现有研究从A*及其安全增强策略、Voronoi/功率图的几何结构、编队优化的集中式与分布式方法、RVO系列避碰机制以及覆盖任务应用等方面形成了系统化成果。引言中提出的“局部自由空间约束下的最优编队”与“分布式优化扩展”正是对这些研究脉络的综合与深化，为多机器人在复杂环境中的协同导航提供了更完备的解决路径。
-  </p>
+    <!-- H1 -->
+    <div class="sb-section">
+      <div class="sb-title">📌 一级标题</div>
+      <div class="sb-label">字体</div>
+      <select class="sb-select" id="s-h1font" onchange="applyStyles()">
+        <option value="'SimHei','黑体',sans-serif" selected>黑体 SimHei</option>
+        <option value="'SimSun','宋体',serif">宋体 SimSun</option>
+        <option value="'Times New Roman',Times,serif">Times New Roman</option>
+        <option value="Arial,Helvetica,sans-serif">Arial</option>
+      </select>
+      <div class="grid2">
+        <div>
+          <div class="sb-label">字号</div>
+          <select class="sb-select" id="s-h1size" onchange="applyStyles()">
+            <option value="12pt">小四 12pt</option>
+            <option value="14pt">四号 14pt</option>
+            <option value="15pt" selected>小三 15pt</option>
+            <option value="16pt">三号 16pt</option>
+            <option value="18pt">小二 18pt</option>
+          </select>
+        </div>
+        <div>
+          <div class="sb-label">对齐</div>
+          <select class="sb-select" id="s-h1align" onchange="applyStyles()">
+            <option value="center" selected>居中</option>
+            <option value="left">左对齐</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
-  <h2 class="refs">参考文献</h2>
-  <ol>
-    <li>Y. Yang and Q. Cai, "Research on the a-star algorithm based on path finding," in 2023 IEEE 3rd Int. Conf. on Data Science and Computer Application (ICDSCA). IEEE, 2023, pp. 199–202.</li>
-    <li>M. Li and H. Zhang, "AUV 3D path planning based on A* algorithm," in 2020 Chinese Automation Congress (CAC). IEEE, 2020, pp. 11–16.</li>
-    <li>B. Cao, Z. Yang, L. Yu, and Y. Zhang, "Research on the star algorithm for safe path planning," in 2023 IEEE Int. Conf. on Control, Electronics and Computer Technology (ICCECT). IEEE, 2023, pp. 105–109.</li>
-    <li>S.-L. Ho et al., "Voronoi diagram based collision-free A* algorithm for mobile vehicle in complex dynamic environment," in 2022 IEEE Int. Conf. on Consumer Electronics-Taiwan. IEEE, 2022, pp. 429–430.</li>
-    <li>Z. Liu et al., "Fusion of weighted Voronoi diagram and A* algorithm for mobile robot path planning," in 2022 ICEEMT. IEEE, 2022, pp. 403–406.</li>
-    <li>H. Tian et al., "Clean generalized Voronoi diagram: An efficient algorithm for path planning in robotics," in 2025 IEEE ICMA. IEEE, 2025, pp. 759–763.</li>
-    <li>O. Arslan and D. E. Koditschek, "Exact robot navigation using power diagrams," in 2016 IEEE ICRA. IEEE, 2016, pp. 1–8.</li>
-    <li>K. Sugihara, "Why are Voronoi diagrams so fruitful in application?" in 2011 Eighth Int. Symp. on Voronoi Diagrams. IEEE, 2011, pp. 14–14.</li>
-    <li>E. Montijano and A. R. Mosteo, "Efficient multi-robot formations using distributed optimization," in 53rd IEEE CDC. IEEE, 2014, pp. 6167–6172.</li>
-    <li>Q. Liu and M. Wang, "A projection-based algorithm for optimal formation and optimal matching of multi-robot system," Nonlinear Dynamics, vol. 104, no. 1, pp. 439–450, 2021.</li>
-    <li>J. Huang, S. Zhou, H. Tu, Y. Yao, and Q. Liu, "Distributed optimization algorithm for multi-robot formation with virtual reference center," IEEE/CAA J. Automatica Sinica, vol. 9, no. 4, pp. 732–734, 2022.</li>
-    <li>S. H. Arul and D. Manocha, "V-RVO: Decentralized multi-agent collision avoidance using Voronoi diagrams and reciprocal velocity obstacles," in 2021 IEEE/RSJ IROS. IEEE, 2021, pp. 8097–8104.</li>
-    <li>M. Sainte Catherine and E. Lucet, "A modified hybrid reciprocal velocity obstacles approach for multi-robot motion planning without communication," in 2020 IEEE/RSJ IROS. IEEE, 2020, pp. 5708–5714.</li>
-    <li>M. Fachri, M. Hariadi, and S. M. S. Nugroho, "Emotional reciprocal velocity obstacles for leader-following: A velocity obstacles based steering behavior," IEEE Access, 2024.</li>
-    <li>M. Fachri et al., "Level of priority based leader-following behavior using reciprocal velocity obstacles in multi-agents navigation," in 2021 ISMODE. IEEE, 2022, pp. 45–50.</li>
-    <li>P. E. Hart, N. J. Nilsson, and B. Raphael, "A formal basis for the heuristic determination of minimum cost paths," IEEE Trans. Syst. Sci. Cybern., vol. 4, no. 2, pp. 100–107, 1968.</li>
-    <li>Q. Liu and K. Li, "A continuous-time algorithm based on multi-agent system for distributed least absolute deviation subject to hybrid constraints," in IECON 2017. IEEE, 2017, pp. 7381–7386.</li>
-    <li>Y. Hu, H. Yu, Y. Zhong, and Y. Lv, "Distributed collision-avoidance formation control: A velocity obstacle-based approach," in 2019 IEEE SSCI. IEEE, 2019, pp. 1994–2000.</li>
-    <li>Y. Yue, Q. Liu, and Z. Zhang, "A distributed projection-based algorithm with local estimators for optimal formation of multi-robot system," in ICONIP 2023, LNCS 14447. Springer, 2024, pp. 344–355.</li>
-    <li>H. Choset, "Coverage for robotics: A survey of recent results," Ann. Math. Artif. Intell., vol. 31, pp. 113–126, 2001.</li>
-    <li>P. A. Jimenez et al., "Improving path planning for multi-robot coverage tasks," in 2007 IEEE/ASME Int. Conf. on Advanced Intelligent Mechatronics. IEEE, 2007, pp. 1–6.</li>
-  </ol>
+    <!-- H2 -->
+    <div class="sb-section">
+      <div class="sb-title">📌 二级标题</div>
+      <div class="sb-label">字体</div>
+      <select class="sb-select" id="s-h2font" onchange="applyStyles()">
+        <option value="'SimHei','黑体',sans-serif" selected>黑体 SimHei</option>
+        <option value="'SimSun','宋体',serif">宋体 SimSun</option>
+        <option value="'Times New Roman',Times,serif">Times New Roman</option>
+        <option value="Arial,Helvetica,sans-serif">Arial</option>
+      </select>
+      <div class="grid2">
+        <div>
+          <div class="sb-label">字号</div>
+          <select class="sb-select" id="s-h2size" onchange="applyStyles()">
+            <option value="12pt">小四 12pt</option>
+            <option value="14pt" selected>四号 14pt</option>
+            <option value="15pt">小三 15pt</option>
+            <option value="16pt">三号 16pt</option>
+          </select>
+        </div>
+        <div>
+          <div class="sb-label">对齐</div>
+          <select class="sb-select" id="s-h2align" onchange="applyStyles()">
+            <option value="left" selected>左对齐</option>
+            <option value="center">居中</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- H3 -->
+    <div class="sb-section">
+      <div class="sb-title">📌 三级标题</div>
+      <div class="grid2">
+        <div>
+          <div class="sb-label">字号</div>
+          <select class="sb-select" id="s-h3size" onchange="applyStyles()">
+            <option value="12pt" selected>小四 12pt</option>
+            <option value="13pt">13pt</option>
+            <option value="14pt">四号 14pt</option>
+          </select>
+        </div>
+        <div>
+          <div class="sb-label">对齐</div>
+          <select class="sb-select" id="s-h3align" onchange="applyStyles()">
+            <option value="left" selected>左对齐</option>
+            <option value="center">居中</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Download -->
+    <div class="dl-area">
+      <button class="btn btn-docx" onclick="exportToDocx()">⬇ 下载 DOCX（含Word公式）</button>
+      <button class="btn btn-pdf" onclick="exportToPDF()">⬇ 下载 PDF</button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <main id="main">
+    <div id="document-page">
+      <div class="pg-header">
+        <span>东南大学本科生创新训练计划项目</span>
+        <span id="pg-num">第 1 页</span>
+      </div>
+      <div id="doc-content">
+        <!-- injected by JS -->
+      </div>
+    </div>
+  </main>
+
+</div><!-- #app -->
+
+<div id="notif"></div>
+<!-- Library loading status bar (hidden once all loaded) -->
+<div id="lib-status" style="
+  position:fixed;bottom:0;left:0;right:0;
+  background:#1a3a6b;color:#adc6f5;
+  font-size:11.5px;text-align:center;padding:4px 0;
+  z-index:9998;letter-spacing:.3px;
+">⏳ 正在加载 docx.js / FileSaver…</div>
+
+<!-- ===== DYNAMIC SCRIPT LOADER (multi-CDN fallback) ===== -->
+<script>
+/**
+ * Try loading a script from each URL in sequence; resolve on first success.
+ * If all fail, resolve anyway (caller checks window global).
+ */
+function loadScript(urls, globalCheck) {
+  return new Promise(resolve => {
+    let idx = 0;
+    function tryNext() {
+      if (idx >= urls.length) { resolve(false); return; }
+      const url = urls[idx++];
+      const s = document.createElement('script');
+      s.src = url;
+      s.crossOrigin = 'anonymous';
+      s.onload = () => {
+        // Some UMD bundles need a tick to set the global
+        setTimeout(() => {
+          if (!globalCheck || globalCheck()) { resolve(true); }
+          else { tryNext(); }           // script loaded but global not set → try next
+        }, 30);
+      };
+      s.onerror = () => { document.head.removeChild(s); tryNext(); };
+      document.head.appendChild(s);
+    }
+    tryNext();
+  });
+}
+
+// Track readiness
+window._libReady = { katex: false, docx: false, fileSaver: false, html2pdf: false };
+
+// KaTeX
+loadScript([
+  'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js',
+  'https://unpkg.com/katex@0.16.9/dist/katex.min.js'
+], () => !!window.katex).then(ok => {
+  if (ok) loadScript([
+    'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js',
+    'https://unpkg.com/katex@0.16.9/dist/contrib/auto-render.min.js'
+  ], () => !!window.renderMathInElement).then(() => {
+    window._libReady.katex = true;
+    if (window._katexCallback) window._katexCallback();
+  });
+});
+
+// docx.js — try unpkg first (more reliable UMD build path), then jsDelivr
+loadScript([
+  'https://unpkg.com/docx@8.5.0/build/index.js',
+  'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js',
+  'https://unpkg.com/docx@7.8.2/build/index.js',
+  'https://cdn.jsdelivr.net/npm/docx@7.8.2/build/index.js'
+], () => !!(window.docx && window.docx.Document)).then(ok => {
+  window._libReady.docx = ok;
+  updateLibStatus();
+});
+
+// FileSaver
+loadScript([
+  'https://unpkg.com/file-saver@2.0.5/dist/FileSaver.min.js',
+  'https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js'
+], () => typeof saveAs === 'function').then(ok => {
+  window._libReady.fileSaver = ok;
+  updateLibStatus();
+});
+
+// html2pdf
+loadScript([
+  'https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
+  'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js'
+], () => !!window.html2pdf).then(ok => {
+  window._libReady.html2pdf = ok;
+  updateLibStatus();
+});
+
+function updateLibStatus() {
+  const bar = document.getElementById('lib-status');
+  if (!bar) return;
+  const allReady = window._libReady.docx && window._libReady.fileSaver;
+  if (allReady) {
+    bar.style.display = 'none';
+  } else {
+    const parts = [];
+    if (!window._libReady.docx) parts.push('docx.js');
+    if (!window._libReady.fileSaver) parts.push('FileSaver');
+    bar.textContent = '⏳ 正在加载库：' + parts.join('、') + '…';
+  }
+}
+</script>
+
+<script>
+/* ============================================================
+   CONTENT DATA
+   每条记录 type:
+     'h0'      – 摘要标题（与h1同级但无章号）
+     'h1'      – 第X章
+     'h2'      – X.Y
+     'h3'      – X.Y.Z
+     'para'    – 正文段落（支持内联公式用 $…$ 标记）
+     'kw'      – 关键词行
+     'formula' – 独立公式块 { latex, num }
+     'ref'     – 参考文献条目（数组）
+   ============================================================ */
+const CONTENT = [
+
+// ── 文献综述 ───────────────────────────────────────────────────
+{type:'h1', text:'附录  文献综述'},
+{type:'para', text:'多机器人系统在仓储物流、应急搜救、巡检监测与智能运输等场景中的应用持续扩大，协同导航与编队保持因此成为长期核心问题。现有研究普遍认为，该问题不能只从单一控制层面处理，而应将全局路径、局部安全约束与队形保持进行统一建模与协同求解[1][2][22]。从结题报告的技术路线看，项目工作正是沿着“全局规划—局部可行域—编队优化—避碰协调”的链路展开，这与近年的主流研究范式高度一致。'},
+{type:'para', text:'在全局与几何引导层面，经典A*为多机器人路径规划提供了可解释、可实现的基准框架，但其在障碍密集区容易生成贴障路径，安全裕度不足[1][2]。针对该缺陷，安全增强型A*通过距离惩罚机制抬升高风险路段代价，使路径更偏向安全通道[3]。同时，基于Voronoi图及其加权、广义变体的方法通过拓扑骨架提升通行鲁棒性[4][5][6]，功率图方法进一步以凸无碰撞区域刻画可行运动空间，为后续局部自由空间约束提供了直接启发[7][8]。这些研究共同说明，几何结构信息是复杂环境下稳定导航的重要支撑。'},
+{type:'para', text:'在编队保持与最优性方面，形状理论将“旋转—缩放—平移等价”转化为线性约束，为把编队保持嵌入凸优化奠定了数学基础[9]。基于投影的最优编队方法在集中式情形下可有效求得高质量解[10]，而基于拉普拉斯矩阵的一致性机制将该思路推广到分布式网络，实现了通信受限条件下的协同优化[11][19]。进一步地，面向障碍环境的研究将局部自由空间约束与编队最优控制联合处理，避免了“先编队后避障”导致的可行性冲突，使编队保持与通过性在同一优化框架内协调[22]。'},
+{type:'para', text:'在碰撞避免层面，互反速度障碍及其改进方法已成为多机器人实时避碰的重要技术分支。相关工作通过引入Voronoi缓冲、混合动力学约束与优先级机制，提升了无通信或弱通信条件下的局部避碰能力与稳定性[12][13][14][15]；速度障碍思想在分布式编队控制中的结合应用也表明，个体避碰与群体队形可以通过分层机制实现兼容[18]。结合结题报告可见，外部障碍约束与内部机器人互避若能形成分层耦合关系，将显著降低系统在狭窄区域内的停滞与振荡风险。'},
+{type:'para', text:'从任务拓展看，覆盖路径规划相关综述与多机器人覆盖研究指出，编队导航的价值不仅在于“到达目标”，更在于提升区域遍历效率、信息获取完整性与任务执行可扩展性[20][21]。因此，当前文献脉络已由单点导航逐步转向“导航—编队—避碰—覆盖”一体化。总体而言，结题报告中的方法路线与该演进方向一致：以安全增强型全局规划保证可达性，以局部自由空间与形状约束保证可行性，以分布式优化与速度障碍机制保证实时性与可扩展性，为复杂环境中的多机器人协同导航提供了系统化解决思路[3][7][10][11][19][22]。'}
+];
+
+function renderContent() {
+  const container = document.getElementById('doc-content');
+  let html = '';
+
+  for (const item of CONTENT) {
+    switch(item.type) {
+      case 'h0':
+        html += `<div class="dh1" contenteditable="true">${esc(item.text)}</div>`;
+        break;
+      case 'h1':
+        html += `<div class="dh1" contenteditable="true">${esc(item.text)}</div>`;
+        break;
+      case 'h2':
+        html += `<div class="dh2" contenteditable="true">${esc(item.text)}</div>`;
+        break;
+      case 'h3':
+        html += `<div class="dh3" contenteditable="true">${esc(item.text)}</div>`;
+        break;
+      case 'para':
+        html += `<div class="dp" contenteditable="true">${esc(item.text)}</div>`;
+        break;
+      case 'kw':
+        html += `<div class="dkw" contenteditable="true">${esc(item.text)}</div>`;
+        break;
+      case 'formula': {
+        const num = item.num || '';
+        html += `<div class="df-wrap">
+          <div class="df-inner" data-latex="${escAttr(item.latex)}">
+            <span class="math-block">\\[${item.latex}\\]</span>
+          </div>
+          ${num ? `<span class="df-num">${esc(num)}</span>` : ''}
+        </div>`;
+        break;
+      }
+      case 'refs':
+        for (const ref of item.items) {
+          html += `<div class="dref" contenteditable="true">${esc(ref)}</div>`;
+        }
+        break;
+      case 'img': {
+        const cap = item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : '';
+        const style = item.width ? ` style="max-width:${item.width}"` : '';
+        html += `<figure class="df-figure">
+          <img src="${item.src}"${style} alt="${escAttr(item.caption || '')}">
+          ${cap}
+        </figure>`;
+        break;
+      }
+    }
+  }
+
+  container.innerHTML = html;
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+  return s.replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ============================================================
+   STYLE APPLICATION (live)
+   ============================================================ */
+function applyStyles() {
+  const pg = document.getElementById('document-page');
+  const set = (k,v) => pg.style.setProperty(k, v);
+
+  set('--body-font',  document.getElementById('s-bfont').value);
+  set('--body-size',  document.getElementById('s-bsize').value);
+  set('--body-lh',    document.getElementById('s-blh').value);
+  set('--h1-font',    document.getElementById('s-h1font').value);
+  set('--h1-size',    document.getElementById('s-h1size').value);
+  set('--h1-align',   document.getElementById('s-h1align').value);
+  set('--h2-font',    document.getElementById('s-h2font').value);
+  set('--h2-size',    document.getElementById('s-h2size').value);
+  set('--h2-align',   document.getElementById('s-h2align').value);
+  set('--h3-size',    document.getElementById('s-h3size').value);
+  set('--h3-align',   document.getElementById('s-h3align').value);
+}
+
+function loadTemplate(el) {
+  document.querySelectorAll('.tpl').forEach(e=>e.classList.remove('active'));
+  el.classList.add('active');
+  const t = TEMPLATES[el.dataset.tpl];
+  if (!t) return;
+  setSelect('s-bfont',  t.bfont);
+  setSelect('s-bsize',  t.bsize);
+  setSelect('s-blh',    t.blh);
+  setSelect('s-h1font', t.h1font);
+  setSelect('s-h1size', t.h1size);
+  setSelect('s-h1align',t.h1align);
+  setSelect('s-h2font', t.h2font);
+  setSelect('s-h2size', t.h2size);
+  setSelect('s-h2align',t.h2align);
+  setSelect('s-h3size', t.h3size);
+  setSelect('s-h3align',t.h3align);
+  applyStyles();
+}
+
+function setSelect(id, val) {
+  const el = document.getElementById(id);
+  for (const opt of el.options) {
+    if (opt.value === val) { el.value = val; return; }
+  }
+  // If exact match not found, add and select
+  const opt = document.createElement('option');
+  opt.value = val; opt.textContent = val;
+  el.appendChild(opt);
+  el.value = val;
+}
+
+/* ============================================================
+   NOTIFICATION
+   ============================================================ */
+let notifTimer = null;
+function notify(msg, duration=2500) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(notifTimer);
+  notifTimer = setTimeout(()=>el.classList.remove('show'), duration);
+}
+
+/* ============================================================
+   DOCX EXPORT  –  uses docx.js with Math equation objects
+   Formulas are rendered as proper Word equation (OMML) objects
+   via docx.js Math API
+   ============================================================ */
+async function exportToDocx() {
+  notify('⏳ 正在生成 DOCX（含Word公式）…', 12000);
+  await new Promise(r=>setTimeout(r, 50));
+
+  // ── wait up to 15 s for docx.js and FileSaver to load ──
+  const waitLib = (check, label, ms=15000) => new Promise((res, rej) => {
+    if (check()) { res(); return; }
+    const start = Date.now();
+    const t = setInterval(() => {
+      if (check()) { clearInterval(t); res(); }
+      else if (Date.now()-start > ms) {
+        clearInterval(t);
+        rej(new Error(`${label} 加载超时，请检查网络连接后刷新页面重试`));
+      }
+    }, 200);
+  });
+
+  try {
+    await waitLib(
+      () => !!(window.docx && window.docx.Document),
+      'docx.js'
+    );
+    await waitLib(
+      () => typeof saveAs === 'function',
+      'FileSaver'
+    );
+  } catch(waitErr) {
+    notify('❌ ' + waitErr.message, 8000);
+    return;
+  }
+
+  try {
+    const D = window.docx;
+
+    // ── current style settings ──
+    const bodyFontName = getDocxFontName(document.getElementById('s-bfont').value);
+    const bodySize     = ptToHalfPt(document.getElementById('s-bsize').value);
+    const bodyLh       = parseFloat(document.getElementById('s-blh').value);
+    const h1FontName   = getDocxFontName(document.getElementById('s-h1font').value);
+    const h1Size       = ptToHalfPt(document.getElementById('s-h1size').value);
+    const h1Align      = document.getElementById('s-h1align').value === 'center'
+                           ? D.AlignmentType.CENTER : D.AlignmentType.LEFT;
+    const h2FontName   = getDocxFontName(document.getElementById('s-h2font').value);
+    const h2Size       = ptToHalfPt(document.getElementById('s-h2size').value);
+    const h2Align      = document.getElementById('s-h2align').value === 'center'
+                           ? D.AlignmentType.CENTER : D.AlignmentType.LEFT;
+
+    // Line spacing in twips (1pt = 20 twips)
+    const bodyLhTwips  = Math.round(bodyLh * bodySize/2 * 20);
+
+    function bodyPPr(indent2em) {
+      return {
+        spacing: { line: bodyLhTwips, lineRule: D.LineRuleType ? D.LineRuleType.AUTO : 'auto' },
+        indent: indent2em ? { firstLine: bodySize * 20 } : undefined
+      };
+    }
+
+    // ── paragraph factories ──
+    function mkPara(text) {
+      return new D.Paragraph({
+        children: [new D.TextRun({ text, font: bodyFontName, size: bodySize })],
+        spacing: { line: bodyLhTwips },
+        indent: { firstLine: bodySize * 20 }
+      });
+    }
+
+    function mkH1(text, breakPage = false) {
+      return new D.Paragraph({
+        children: [new D.TextRun({ text, font: h1FontName, size: h1Size, bold: true })],
+        alignment: h1Align,
+        spacing: { before: 480, after: 240 },
+        ...(breakPage ? { pageBreakBefore: true } : {})
+      });
+    }
+
+    function mkH2(text) {
+      return new D.Paragraph({
+        children: [new D.TextRun({ text, font: h2FontName, size: h2Size, bold: true })],
+        alignment: h2Align,
+        spacing: { before: 280, after: 120 }
+      });
+    }
+
+    function mkRef(text) {
+      return new D.Paragraph({
+        children: [new D.TextRun({ text, font: bodyFontName, size: bodySize })],
+        spacing: { line: bodyLhTwips },
+        indent: { left: bodySize * 20, hanging: bodySize * 20 }
+      });
+    }
+
+    // ── LaTeX → OMML conversion via KaTeX MathML ──────────────
+
+    // Map KaTeX accent characters → OMML combining characters
+    const ACCENT_MAP = {
+      '\u007e': '\u0303', // ~ tilde           → U+0303 COMBINING TILDE
+      '\u005e': '\u0302', // ^ circumflex       → U+0302 COMBINING CIRCUMFLEX ACCENT
+      '\u02c9': '\u0304', // ˉ modifier macron  → U+0304 COMBINING MACRON
+      '\u00af': '\u0304', // ¯ macron           → U+0304
+      '\u0305': '\u0305', // combining overline → keep as-is
+      '\u02d9': '\u0307', // ˙ dot above        → U+0307 COMBINING DOT ABOVE
+      '\u00a8': '\u0308', // ¨ diaeresis        → U+0308 COMBINING DIAERESIS
+      '\u0060': '\u0300', // ` grave            → U+0300 COMBINING GRAVE ACCENT
+      '\u00b4': '\u0301', // ´ acute            → U+0301 COMBINING ACUTE ACCENT
+      '\u02d8': '\u0306', // ˘ breve            → U+0306 COMBINING BREVE
+      '\u02c7': '\u030c', // ˇ caron            → U+030C COMBINING CARON
+      '\u2192': '\u20d7', // → right arrow      → U+20D7 COMBINING RIGHT ARROW ABOVE
+      '\u20d7': '\u20d7', // combining arrow    → keep as-is
+    };
+
+    /** True when an element node is a fence <mo> (from \left, \right, \middle). */
+    function isFenceMo(el) {
+      if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+      const tag = el.tagName.toLowerCase().replace(/^[a-z0-9]+:/, '');
+      return tag === 'mo' && el.getAttribute('fence') === 'true';
+    }
+
+    /** All childNodes of `parent` strictly between `startEl` and `endEl`. */
+    function nodesBetween(parent, startEl, endEl) {
+      const all = Array.from(parent.childNodes);
+      const a = all.indexOf(startEl), b = all.indexOf(endEl);
+      return (a >= 0 && b > a) ? all.slice(a + 1, b) : [];
+    }
+
+    /**
+     * Build an OMML accent element <m:acc> for a KaTeX <mover accent="true"> node.
+     * Uses D.XmlComponent + D.MathAccentCharacter + D.MathBase (all exported by docx 8.x).
+     */
+    function buildAccent(accentChar, baseChildren) {
+      try {
+        const ommlChar = ACCENT_MAP[accentChar] || accentChar;
+        const acc   = new D.XmlComponent('m:acc');
+        const accPr = new D.XmlComponent('m:accPr');
+        // U+0302 (^) is the OMML default accent per ECMA-376 §22.1.2.5 (m:accPr/m:chr)
+        // — omit chr element to keep the default (hat) so Word renders it correctly
+        if (ommlChar !== '\u0302') {
+          accPr.root.push(new D.MathAccentCharacter(ommlChar));
+        }
+        if (accPr.root.length) acc.root.push(accPr);
+        acc.root.push(new D.MathBase(baseChildren));
+        return acc;
+      } catch(e) {
+        console.warn('buildAccent failed, falling back to superscript:', e);
+        return new D.MathSuperScript({ children: baseChildren, superScript: [new D.MathRun(accentChar)] });
+      }
+    }
+
+    /**
+     * Build an OMML <m:d> delimiter element.
+     * `parts` is an array of OMML-element arrays (one per separator-delimited section).
+     * OMML defaults: begChr=(  endChr=)  sepChr=|
+     */
+    function mkDelimiter(begChar, sepChar, endChar, parts) {
+      // Use docx.js bracket classes for common single-part cases (no separator)
+      if (parts.length === 1 && sepChar === null) {
+        const c = parts[0];
+        if (begChar === '(' && endChar === ')') return new D.MathRoundBrackets({ children: c });
+        if (begChar === '[' && endChar === ']') return new D.MathSquareBrackets({ children: c });
+        if (begChar === '{' && endChar === '}') return new D.MathCurlyBrackets({ children: c });
+      }
+
+      // General case: build raw <m:d> with explicit dPr
+      const d   = new D.XmlComponent('m:d');
+      const dPr = new D.XmlComponent('m:dPr');
+
+      if (begChar !== '(') {
+        const e = new D.XmlComponent('m:begChr');
+        e.root.push({ _attr: { 'm:val': begChar } });
+        dPr.root.push(e);
+      }
+      if (sepChar !== null && sepChar !== '|') {
+        const e = new D.XmlComponent('m:sepChr');
+        e.root.push({ _attr: { 'm:val': sepChar } });
+        dPr.root.push(e);
+      }
+      if (endChar !== ')') {
+        const e = new D.XmlComponent('m:endChr');
+        e.root.push({ _attr: { 'm:val': endChar } });
+        dPr.root.push(e);
+      }
+      if (dPr.root.length) d.root.push(dPr);
+      for (const p of parts) d.root.push(new D.MathBase(p));
+      return d;
+    }
+
+    /**
+     * Build an OMML <m:eqArr> equation-array element.
+     * `rowContents` is an array of OMML-element arrays, one per row.
+     * Used for \begin{cases}, \begin{aligned}, \begin{align}, etc.
+     */
+    function buildEqArr(rowContents) {
+      const eqArr = new D.XmlComponent('m:eqArr');
+      for (const rowContent of rowContents) {
+        const e = new D.XmlComponent('m:e');
+        e.root.push(...rowContent);
+        eqArr.root.push(e);
+      }
+      return eqArr;
+    }
+
+    /**
+     * Build an OMML <m:m> matrix element.
+     * `rows2d` is an array of rows; each row is an array of cell OMML-element arrays.
+     * Used for \begin{pmatrix}, \begin{bmatrix}, etc. (multi-column tables inside fences).
+     */
+    function buildMatrix(rows2d) {
+      const m = new D.XmlComponent('m:m');
+      for (const cells of rows2d) {
+        const mr = new D.XmlComponent('m:mr');
+        for (const cell of cells) {
+          const e = new D.XmlComponent('m:e');
+          e.root.push(...cell);
+          mr.root.push(e);
+        }
+        m.root.push(mr);
+      }
+      return m;
+    }
+
+    /**
+     * Detect fenced <mrow> (from \left...\right) and build a proper OMML delimiter.
+     * Returns null if the mrow is not a fenced expression.
+     */
+    function tryFencedMrow(node) {
+      const childEls = Array.from(node.children);
+      if (childEls.length < 2) return null;
+      if (!isFenceMo(childEls[0]) || !isFenceMo(childEls[childEls.length - 1])) return null;
+
+      const begChar = childEls[0].textContent;
+      const endChar = childEls[childEls.length - 1].textContent;
+
+      // Middle fence elements (from \middle) become separators
+      const innerEls = childEls.slice(1, -1);
+      const middleFences = innerEls.filter(isFenceMo);
+      const innerNodes  = nodesBetween(node, childEls[0], childEls[childEls.length - 1]);
+
+      if (middleFences.length === 0) {
+        // Detect single inner <mtable> → route to eqArr or matrix
+        const innerEls = innerNodes.filter(n => n.nodeType === Node.ELEMENT_NODE);
+        if (innerEls.length === 1) {
+          const innerTag = innerEls[0].tagName.toLowerCase().replace(/^[a-z0-9]+:/, '');
+          if (innerTag === 'mtable') {
+            const mtbl = innerEls[0];
+            // Convert each <mtd> cell to OMML
+            const rows2d = Array.from(mtbl.children).map(mtr =>
+              Array.from(mtr.children).map(mtd => {
+                const out = [];
+                for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
+                return out;
+              })
+            );
+            const maxCols = rows2d.length > 0 ? Math.max(...rows2d.map(r => r.length)) : 1;
+            // Multi-column table inside ( or [ → proper OMML matrix
+            const isMatrixFence = '(['.includes(begChar) && '([)\\u2016'.includes(endChar);
+            if (maxCols > 1 && isMatrixFence) {
+              return mkDelimiter(begChar, null, endChar, [[buildMatrix(rows2d)]]);
+            } else {
+              // cases / aligned / etc. → eqArr inside delimiter
+              const rowContents = rows2d.map(r => r.flat());
+              return mkDelimiter(begChar, null, endChar, [[buildEqArr(rowContents)]]);
+            }
+          }
+        }
+        // No special table: standard content inside delimiter
+        const content = innerNodes.flatMap(n => mathmlNodeToOmml(n));
+        return mkDelimiter(begChar, null, endChar, [content]);
+      }
+
+      // Split inner content at each middle fence
+      const parts = [];
+      let current = [];
+      for (const n of innerNodes) {
+        if (n.nodeType === Node.ELEMENT_NODE && isFenceMo(n) && middleFences.includes(n)) {
+          parts.push(current);
+          current = [];
+        } else {
+          current.push(...mathmlNodeToOmml(n));
+        }
+      }
+      parts.push(current);
+
+      const sepChar = middleFences[0].textContent;
+      return mkDelimiter(begChar, sepChar, endChar, parts);
+    }
+
+    /**
+     * Recursively convert a MathML DOM node to an array of docx OMML elements.
+     */
+    function mathmlNodeToOmml(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent;
+        if (!text.trim()) return [];
+        return [new D.MathRun(text)];
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return [];
+
+      // Strip namespace prefix (e.g. "m:mrow" → "mrow")
+      const tag = node.tagName.toLowerCase().replace(/^[a-z0-9]+:/, '');
+
+      const childOmml = (el) => {
+        const out = [];
+        for (const c of el.childNodes) out.push(...mathmlNodeToOmml(c));
+        return out;
+      };
+      const nth = (n) => node.children[n] ? childOmml(node.children[n]) : [];
+
+      switch (tag) {
+        case 'math':
+        case 'mstyle':
+        case 'mpadded':
+        case 'merror':
+        case 'mphantom':
+          return childOmml(node);
+
+        case 'mrow': {
+          const fenced = tryFencedMrow(node);
+          if (fenced) return [fenced];
+          return childOmml(node);
+        }
+
+        case 'mfenced': {
+          // Handle deprecated <mfenced> (not produced by KaTeX 0.16 but may appear elsewhere)
+          const open = node.getAttribute('open') ?? '(';
+          const close = node.getAttribute('close') ?? ')';
+          const seps  = node.getAttribute('separators') ?? ',';
+          const sep   = seps[0] ?? null;
+          return [mkDelimiter(open, sep, close, [childOmml(node)])];
+        }
+
+        case 'semantics':
+          // Delegate to mathmlNodeToOmml (not childOmml) so that mrow/fence detection runs
+          return node.children[0] ? mathmlNodeToOmml(node.children[0]) : [];
+
+        case 'annotation':
+        case 'annotation-xml':
+          return [];
+
+        case 'mi':
+        case 'mn':
+        case 'mo':
+        case 'mtext':
+          return node.textContent ? [new D.MathRun(node.textContent)] : [];
+
+        case 'mspace':
+          return [new D.MathRun('\u00a0')];
+
+        case 'mfrac':
+          return [new D.MathFraction({ numerator: nth(0), denominator: nth(1) })];
+
+        case 'msqrt':
+          try { return [new D.MathRadical({ children: childOmml(node) })] }
+          catch(e) { return [new D.MathRun('√('), ...childOmml(node), new D.MathRun(')')]; }
+
+        case 'mroot':
+          try { return [new D.MathRadical({ children: nth(0), degree: nth(1) })]; }
+          catch(e) { return [...nth(1), new D.MathRun('√('), ...nth(0), new D.MathRun(')')]; }
+
+        case 'msub':
+          return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+
+        case 'msup':
+          return [new D.MathSuperScript({ children: nth(0), superScript: nth(1) })];
+
+        case 'msubsup':
+          return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
+
+        case 'mover': {
+          // accent="true" marks diacritic accents (\widetilde, \hat, \bar, …)
+          if (node.getAttribute('accent') === 'true') {
+            const accentChar = node.children[1]?.textContent ?? '';
+            return [buildAccent(accentChar, nth(0))];
+          }
+          // Non-accent mover: treat as superscript (limit notation, etc.)
+          return [new D.MathSuperScript({ children: nth(0), superScript: nth(1) })];
+        }
+
+        case 'munder': {
+          if (node.getAttribute('accentunder') === 'true') {
+            // Underaccent — approximate as subscript
+            return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+          }
+          return [new D.MathSubScript({ children: nth(0), subScript: nth(1) })];
+        }
+
+        case 'munderover':
+          return [new D.MathSubSuperScript({ children: nth(0), subScript: nth(1), superScript: nth(2) })];
+
+        case 'mtable': {
+          // Standalone <mtable> (e.g. \begin{aligned}, \begin{align}, \begin{gather}).
+          // Tables inside fences (\begin{cases}, \begin{pmatrix}, etc.) are handled
+          // in tryFencedMrow before this code is reached.
+          const rows2d = Array.from(node.children).map(mtr =>
+            Array.from(mtr.children).map(mtd => {
+              const out = [];
+              for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
+              return out;
+            })
+          );
+          if (rows2d.length === 0) return [];
+          // Concatenate cells within each row (handles multi-column align environments)
+          const rowContents = rows2d.map(r => r.flat());
+          return [buildEqArr(rowContents)];
+        }
+
+        case 'mtr':
+        case 'mtd':
+        case 'mlabeledtr':
+        case 'menclose':
+        case 'mmultiscripts':
+        default:
+          return childOmml(node);
+      }
+    }
+
+    /**
+     * Convert a LaTeX string to an array of docx OMML math elements.
+     * Uses KaTeX for reliable parsing; falls back to a plain MathRun if KaTeX is unavailable.
+     */
+    function latexToOmml(latex) {
+      try {
+        if (!window.katex) return [new D.MathRun(latex)];
+        const html = katex.renderToString(latex, { output: 'mathml', throwOnError: false });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const mathEl = div.querySelector('math');
+        if (!mathEl) return [new D.MathRun(latex)];
+        return mathmlNodeToOmml(mathEl);
+      } catch(e) {
+        console.warn('latexToOmml failed:', latex, e);
+        return [new D.MathRun(latex)];
+      }
+    }
+
+    function mathPara(mathChildren, num) {
+      const children = [new D.Math({ children: mathChildren })];
+      if (num) {
+        children.push(new D.TextRun({ text: '      ' + num, font: bodyFontName, size: bodySize }));
+      }
+      return new D.Paragraph({
+        children,
+        alignment: D.AlignmentType.CENTER,
+        spacing: { before: 180, after: 180 }
+      });
+    }
+
+    /** Build a centred display-math paragraph from a LaTeX string. */
+    function buildMathForLatex(latex, num) {
+      return mathPara(latexToOmml(latex), num);
+    }
+
+    /**
+     * Split a paragraph text string into alternating plain-text / inline-math segments.
+     * Handles $$...$$ (display, treated as inline) and $...$ markers.
+     */
+    function parseMathSegments(text) {
+      const segs = [];
+      let i = 0;
+      while (i < text.length) {
+        if (text[i] === '$' && text[i + 1] === '$') {
+          const end = text.indexOf('$$', i + 2);
+          if (end !== -1) { segs.push({ math: true, s: text.slice(i + 2, end) }); i = end + 2; continue; }
+        }
+        if (text[i] === '$') {
+          const end = text.indexOf('$', i + 1);
+          if (end !== -1) { segs.push({ math: true, s: text.slice(i + 1, end) }); i = end + 1; continue; }
+        }
+        const next$ = text.indexOf('$', i);
+        const chunk = next$ === -1 ? text.slice(i) : text.slice(i, next$);
+        if (chunk) segs.push({ math: false, s: chunk });
+        if (next$ === -1) break;
+        i = next$;
+      }
+      return segs;
+    }
+
+    /**
+     * Build a body paragraph whose text may contain inline LaTeX ($...$).
+     * Math spans are converted to Word OMML; plain text becomes TextRun.
+     */
+    function mkParaWithMath(text) {
+      const segs = parseMathSegments(text);
+      const children = [];
+      for (const seg of segs) {
+        if (seg.math) {
+          const omml = latexToOmml(seg.s);
+          if (omml.length) children.push(new D.Math({ children: omml }));
+        } else {
+          if (seg.s) children.push(new D.TextRun({ text: seg.s, font: bodyFontName, size: bodySize }));
+        }
+      }
+      return new D.Paragraph({
+        children,
+        spacing: { line: bodyLhTwips },
+        indent: { firstLine: bodySize * 20 }
+      });
+    }
+
+    /**
+     * Convert an image source (data URL, plain base64, or URL) to a Uint8Array
+     * suitable for docx.js ImageRun. Returns null when src is empty.
+     */
+    async function b64ToUint8(src) {
+      if (!src) return null;
+      const isDataUrl = src.startsWith('data:');
+      const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//');
+      if (isDataUrl || !isUrl) {
+        const b64 = src.includes(',') ? src.split(',')[1] : src;
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return arr;
+      }
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`Image fetch failed for ${src}: ${response.status} ${response.statusText}`);
+      const buf = await response.arrayBuffer();
+      return new Uint8Array(buf);
+    }
+
+    /**
+     * Build a centred paragraph containing an image from a data-URL.
+     * widthPt / heightPt are in points (1pt = 12700 EMU in docx.js).
+     * caption is an optional string placed below the image.
+     */
+    async function buildImagePara(src, widthPt, heightPt, caption) {
+      try {
+        const imgData = await b64ToUint8(src);
+        if (!imgData) return [];
+        const imageRun = new D.ImageRun({
+          data: imgData,
+          transformation: { width: widthPt, height: heightPt }
+        });
+        const imgPara = new D.Paragraph({
+          children: [imageRun],
+          alignment: D.AlignmentType.CENTER,
+          spacing: { before: 120, after: caption ? 60 : 180 }
+        });
+        if (!caption) return [imgPara];
+        const capPara = new D.Paragraph({
+          children: [new D.TextRun({ text: caption, font: bodyFontName, size: bodySize, italics: true })],
+          alignment: D.AlignmentType.CENTER,
+          spacing: { after: 180 }
+        });
+        return [imgPara, capPara];
+      } catch (error) {
+        console.warn('Image load failed:', src, error?.message || error);
+        const fallbackText = caption ? `${caption} (图片加载失败)` : '图片加载失败';
+        return [new D.Paragraph({
+          children: [new D.TextRun({ text: fallbackText, font: bodyFontName, size: bodySize, italics: true })],
+          alignment: D.AlignmentType.CENTER,
+          spacing: { before: 120, after: 180 }
+        })];
+      }
+    }
+
+    // ── traverse DOM to build docx children ──
+    const docChildren = [];
+
+    // Cover / title page header
+    docChildren.push(new D.Paragraph({
+      children: [new D.TextRun({ text: '东南大学本科生创新训练计划项目', font: bodyFontName, size: bodySize })],
+      alignment: D.AlignmentType.CENTER,
+      spacing: { before: 0, after: 480 }
+    }));
+    docChildren.push(new D.Paragraph({
+      children: [new D.TextRun({ text: '结  题  报  告', font: h1FontName, size: h1Size * 2, bold: true })],
+      alignment: D.AlignmentType.CENTER,
+      spacing: { after: 480 }
+    }));
+    docChildren.push(new D.Paragraph({
+      children: [new D.TextRun({ text: '项目名称：多机器人系统最优编队导航研究', font: bodyFontName, size: bodySize })],
+      spacing: { after: 120 }
+    }));
+    docChildren.push(new D.Paragraph({
+      children: [new D.TextRun({ text: '所属学院：数学学院', font: bodyFontName, size: bodySize })],
+      spacing: { after: 120 }
+    }));
+    docChildren.push(new D.Paragraph({
+      children: [new D.TextRun({ text: '指导教师：刘庆山', font: bodyFontName, size: bodySize })],
+      spacing: { after: 480 }
+    }));
+
+    // Content paragraphs
+    for (const item of CONTENT) {
+      switch(item.type) {
+        case 'h0':
+          docChildren.push(new D.Paragraph({
+            children: [new D.TextRun({ text: item.text, font: h1FontName, size: h1Size, bold: true })],
+            alignment: D.AlignmentType.CENTER,
+            spacing: { before: 480, after: 240 }
+          }));
+          break;
+        case 'h1':
+          docChildren.push(mkH1(item.text, item.text === '参考文献'));
+          break;
+        case 'h2':
+          docChildren.push(mkH2(item.text));
+          break;
+        case 'h3':
+          docChildren.push(new D.Paragraph({
+            children: [new D.TextRun({ text: item.text, font: bodyFontName, size: bodySize, bold: true })],
+            spacing: { before: 200, after: 80 }
+          }));
+          break;
+        case 'para':
+          docChildren.push(mkParaWithMath(item.text));
+          break;
+        case 'kw':
+          docChildren.push(new D.Paragraph({
+            children: [new D.TextRun({ text: item.text, font: bodyFontName, size: bodySize })],
+            spacing: { line: bodyLhTwips, before: 160 }
+          }));
+          break;
+        case 'formula':
+          docChildren.push(buildMathForLatex(item.latex, item.num || ''));
+          break;
+        case 'refs':
+          for (const ref of item.items) {
+            docChildren.push(mkRef(ref));
+          }
+          break;
+        case 'img': {
+          // img item: { type:'img', src: 'data:image/jpeg;base64,...', caption:'...', widthPt:440, heightPt:330 }
+          const wPt = item.widthPt || 400;
+          const hPt = item.heightPt || Math.round(wPt * 0.75);
+          const paras = await buildImagePara(item.src, wPt, hPt, item.caption || '');
+          docChildren.push(...paras);
+          break;
+        }
+      }
+    }
+
+    // ── build Document ──
+    const doc = new D.Document({
+      styles: {
+        paragraphStyles: []
+      },
+      sections: [{
+        properties: {
+          page: {
+            margin: {
+              top: 1134,   // 2cm = 1133.86 twips
+              bottom: 1134,
+              left: 1417,  // 2.5cm (2cm + 0.5cm gutter)
+              right: 1134,
+              gutter: 284  // 0.5cm
+            }
+          }
+        },
+        headers: {
+          default: new D.Header({
+            children: [new D.Paragraph({
+              children: [new D.TextRun({ text: '东南大学本科生创新训练计划项目', font: bodyFontName, size: 18 })],
+              alignment: D.AlignmentType.CENTER,
+              border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 1 } }
+            })]
+          })
+        },
+        children: docChildren
+      }]
+    });
+
+    const blob = await D.Packer.toBlob(doc);
+    saveAs(blob, '结项报告.docx');
+    notify('✅ DOCX 下载成功！', 3000);
+
+  } catch(err) {
+    console.error('DOCX export error:', err);
+    notify('❌ DOCX 生成失败：' + err.message, 5000);
+  }
+}
+
+/** Convert CSS pt value string to half-points integer (docx unit) */
+function ptToHalfPt(ptStr) {
+  return Math.round(parseFloat(ptStr) * 2);
+}
+
+/** Extract the first font family name from a CSS font-family string */
+function getDocxFontName(cssFontFamily) {
+  const first = cssFontFamily.split(',')[0].trim().replace(/'/g,'').replace(/"/g,'');
+  return first;
+}
+
+/** Strip LaTeX markup from inline math ($...$) for plain-text export */
+function stripInlineMath(text) {
+  return text
+    .replace(/\$\$[^$]+\$\$/g, '[公式]')
+    .replace(/\$[^$]+\$/g, s => {
+      const inner = s.slice(1,-1);
+      // Very rough LaTeX to unicode conversion for common symbols
+      return inner
+        .replace(/\\mathcal\{([A-Z])\}/g,'$1')
+        .replace(/\\mathbb\{([A-Z])\}/g,'$1')
+        .replace(/\\mathrm\{([^}]+)\}/g,'$1')
+        .replace(/\\text\{([^}]+)\}/g,'$1')
+        .replace(/\\le\b/g,'≤').replace(/\\ge\b/g,'≥')
+        .replace(/\\neq\b/g,'≠').replace(/\\approx\b/g,'≈')
+        .replace(/\\in\b/g,'∈').replace(/\\notin\b/g,'∉')
+        .replace(/\\subset/g,'⊂').replace(/\\cup/g,'∪').replace(/\\cap/g,'∩')
+        .replace(/\\infty/g,'∞').replace(/\\pm/g,'±')
+        .replace(/\\alpha/g,'α').replace(/\\beta/g,'β').replace(/\\gamma/g,'γ')
+        .replace(/\\delta/g,'δ').replace(/\\epsilon/g,'ε').replace(/\\varepsilon/g,'ε')
+        .replace(/\\sigma/g,'σ').replace(/\\lambda/g,'λ').replace(/\\mu/g,'μ')
+        .replace(/\\phi/g,'φ').replace(/\\varphi/g,'φ').replace(/\\psi/g,'ψ')
+        .replace(/\\omega/g,'ω').replace(/\\theta/g,'θ')
+        .replace(/\\top/g,'ᵀ').replace(/\\cdot/g,'·')
+        .replace(/\\ldots/g,'…').replace(/\\cdots/g,'…')
+        .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g,'($1)/($2)')
+        .replace(/\^/g,'').replace(/_/g,'').replace(/\{|\}/g,'')
+        .replace(/\\/g,'').trim();
+    });
+}
+
+/* ============================================================
+   PDF EXPORT  –  uses html2pdf.js
+   ============================================================ */
+async function exportToPDF() {
+  notify('⏳ 正在生成 PDF…', 10000);
+  await new Promise(r=>setTimeout(r,50));
+
+  // wait up to 15s for html2pdf
+  const waitPdf = new Promise((res,rej) => {
+    if (window.html2pdf) { res(); return; }
+    const t0 = Date.now();
+    const iv = setInterval(()=>{
+      if (window.html2pdf) { clearInterval(iv); res(); }
+      else if (Date.now()-t0>15000) { clearInterval(iv); rej(new Error('html2pdf.js 加载超时，请检查网络后刷新')); }
+    },200);
+  });
+  try { await waitPdf; }
+  catch(e) { notify('❌ '+e.message, 6000); return; }
+
+  const el = document.getElementById('document-page');
+  const opt = {
+    margin: 0,
+    filename: '结项报告.pdf',
+    image: { type:'jpeg', quality:0.97 },
+    html2canvas: { scale:2, useCORS:true, letterRendering:true },
+    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+  };
+
+  html2pdf().set(opt).from(el).save()
+    .then(()=>notify('✅ PDF 下载成功！', 3000))
+    .catch(e=>notify('❌ PDF 生成失败：'+e.message, 5000));
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function runKaTeX() {
+  if (!window.renderMathInElement) return;
+  renderMathInElement(document.getElementById('doc-content'), {
+    delimiters: [
+      { left:'$$', right:'$$', display:true },
+      { left:'$',  right:'$',  display:false },
+      { left:'\\[', right:'\\]', display:true },
+      { left:'\\(',  right:'\\)',  display:false }
+    ],
+    throwOnError: false
+  });
+}
+
+window.addEventListener('load', () => {
+  renderContent();
+  applyStyles();
+  // KaTeX may already be loaded (fast CDN) or arrive later via dynamic loader
+  if (window.renderMathInElement) {
+    runKaTeX();
+  } else {
+    // will be called by the dynamic loader once auto-render lands
+    window._katexCallback = runKaTeX;
+  }
+});
+</script>
 </body>
 </html>
