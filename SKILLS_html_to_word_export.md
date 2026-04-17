@@ -678,22 +678,31 @@ case 'img': {
 ### 12.3 DOCX 导出（exportToDocx）
 
 ```js
-/** base64 data URL → Uint8Array（docx.js ImageRun 需要 ArrayBuffer/Uint8Array） */
-function b64ToUint8(b64src) {
-  const b64 = b64src.includes(',') ? b64src.split(',')[1] : b64src;
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return arr;
+/** image src（data URL / base64 / http(s) URL）→ Uint8Array */
+async function b64ToUint8(src) {
+  if (!src) return null;
+  const isDataUrl = src.startsWith('data:');
+  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//');
+  if (isDataUrl || !isUrl) {
+    const b64 = src.includes(',') ? src.split(',')[1] : src;
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`Image fetch failed for ${src}: ${response.status}`);
+  const buf = await response.arrayBuffer();
+  return new Uint8Array(buf);
 }
 
 /**
- * Build [imgParagraph, captionParagraph] for a data-URL image.
+ * Build [imgParagraph, captionParagraph] for an image src.
  * widthPt / heightPt are in pt (docx.js ImageRun uses pt natively via transformation).
  */
-function buildImagePara(src, widthPt, heightPt, caption) {
+async function buildImagePara(src, widthPt, heightPt, caption) {
   const imageRun = new D.ImageRun({
-    data: b64ToUint8(src),
+    data: await b64ToUint8(src),
     transformation: { width: widthPt, height: heightPt }
   });
   const imgPara = new D.Paragraph({
@@ -717,7 +726,7 @@ function buildImagePara(src, widthPt, heightPt, caption) {
 case 'img': {
   const wPt = item.widthPt || 400;
   const hPt = item.heightPt || Math.round(wPt * 0.75);
-  docChildren.push(...buildImagePara(item.src, wPt, hPt, item.caption || ''));
+  docChildren.push(...await buildImagePara(item.src, wPt, hPt, item.caption || ''));
   break;
 }
 ```
@@ -787,4 +796,3 @@ def extract_from_docx(docx_path, max_w=1100, quality=82):
             results.append((f'data:image/jpeg;base64,{b64}', img.size))
     return results
 ```
-

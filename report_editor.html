@@ -1352,7 +1352,9 @@ async function exportToDocx() {
      */
     async function b64ToUint8(src) {
       if (!src) return null;
-      if (!src.startsWith('http')) {
+      const isDataUrl = src.startsWith('data:');
+      const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//');
+      if (isDataUrl || !isUrl) {
         const b64 = src.includes(',') ? src.split(',')[1] : src;
         const bin = atob(b64);
         const arr = new Uint8Array(bin.length);
@@ -1360,7 +1362,7 @@ async function exportToDocx() {
         return arr;
       }
       const response = await fetch(src);
-      if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
+      if (!response.ok) throw new Error(`Image fetch failed for ${src}: ${response.status}`);
       const buf = await response.arrayBuffer();
       return new Uint8Array(buf);
     }
@@ -1371,24 +1373,34 @@ async function exportToDocx() {
      * caption is an optional string placed below the image.
      */
     async function buildImagePara(src, widthPt, heightPt, caption) {
-      const imgData = await b64ToUint8(src);
-      if (!imgData) return [];
-      const imageRun = new D.ImageRun({
-        data: imgData,
-        transformation: { width: widthPt, height: heightPt }
-      });
-      const imgPara = new D.Paragraph({
-        children: [imageRun],
-        alignment: D.AlignmentType.CENTER,
-        spacing: { before: 120, after: caption ? 60 : 180 }
-      });
-      if (!caption) return [imgPara];
-      const capPara = new D.Paragraph({
-        children: [new D.TextRun({ text: caption, font: bodyFontName, size: bodySize, italics: true })],
-        alignment: D.AlignmentType.CENTER,
-        spacing: { after: 180 }
-      });
-      return [imgPara, capPara];
+      try {
+        const imgData = await b64ToUint8(src);
+        if (!imgData) return [];
+        const imageRun = new D.ImageRun({
+          data: imgData,
+          transformation: { width: widthPt, height: heightPt }
+        });
+        const imgPara = new D.Paragraph({
+          children: [imageRun],
+          alignment: D.AlignmentType.CENTER,
+          spacing: { before: 120, after: caption ? 60 : 180 }
+        });
+        if (!caption) return [imgPara];
+        const capPara = new D.Paragraph({
+          children: [new D.TextRun({ text: caption, font: bodyFontName, size: bodySize, italics: true })],
+          alignment: D.AlignmentType.CENTER,
+          spacing: { after: 180 }
+        });
+        return [imgPara, capPara];
+      } catch (error) {
+        console.warn('Image load failed:', src, error);
+        const fallbackText = caption ? `${caption}（图片加载失败）` : `图片加载失败：${src}`;
+        return [new D.Paragraph({
+          children: [new D.TextRun({ text: fallbackText, font: bodyFontName, size: bodySize, italics: true })],
+          alignment: D.AlignmentType.CENTER,
+          spacing: { before: 120, after: 180 }
+        })];
+      }
     }
 
     // ── traverse DOM to build docx children ──
