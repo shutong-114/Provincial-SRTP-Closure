@@ -106,15 +106,18 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   --h3-align:left;
 }
 
-/* Page header */
+/* Page header (preview) */
 .pg-header{
   font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
   display:flex;justify-content:space-between;align-items:center;
   padding-bottom:4pt;border-bottom:.5pt solid #bbb;margin-bottom:18pt;
 }
+.pg-header span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pg-header span:first-child{text-align:left}
+.pg-header span:nth-child(2){text-align:center}
+.pg-header span:last-child{text-align:right}
 
 /* PDF export pages */
-.pdf-export-root{width:210mm}
 .pdf-export-page{
   width:210mm;height:297mm;
   padding:2cm 2cm 2cm 2.5cm;
@@ -127,17 +130,26 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
   display:flex;justify-content:space-between;align-items:center;
   padding-bottom:4pt;border-bottom:.5pt solid #bbb;margin-bottom:18pt;
-  min-height:16pt;
+  min-height:16pt;flex-shrink:0;
 }
-.pdf-page-content{flex:1;overflow:hidden}
+.pdf-page-header span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pdf-page-header .hdr-left{text-align:left}
+.pdf-page-header .hdr-center{text-align:center}
+.pdf-page-header .hdr-right{text-align:right}
+.pdf-page-content{flex:1;overflow:hidden;min-height:0}
 .pdf-page-footer{
   font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
   border-top:.5pt solid #bbb;margin-top:12pt;padding-top:4pt;
-  min-height:16pt;
+  min-height:16pt;flex-shrink:0;
+  display:flex;justify-content:space-between;align-items:center;
 }
+.pdf-page-footer span{flex:1}
+.pdf-page-footer .ftr-left{text-align:left}
+.pdf-page-footer .ftr-center{text-align:center}
+.pdf-page-footer .ftr-right{text-align:right}
 
 /* Content area inheriting vars */
-#doc-content{
+#doc-content,.pdf-doc-content{
   font-family:var(--body-font);
   font-size:var(--body-size);
   line-height:var(--body-lh);
@@ -145,29 +157,29 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
 }
 
 /* Headings */
-#doc-content .dh1{
+#doc-content .dh1,.pdf-doc-content .dh1{
   font-family:var(--h1-font);font-size:var(--h1-size);
   font-weight:var(--h1-weight);text-align:var(--h1-align);
   margin-top:24pt;margin-bottom:12pt;
 }
-#doc-content .dh1:first-child{margin-top:0}
-#doc-content .dh2{
+#doc-content .dh1:first-child,.pdf-doc-content .dh1:first-child{margin-top:0}
+#doc-content .dh2,.pdf-doc-content .dh2{
   font-family:var(--h2-font);font-size:var(--h2-size);
   font-weight:var(--h2-weight);text-align:var(--h2-align);
   margin-top:14pt;margin-bottom:6pt;
 }
-#doc-content .dh3{
+#doc-content .dh3,.pdf-doc-content .dh3{
   font-family:var(--h3-font);font-size:var(--h3-size);
   font-weight:var(--h3-weight);text-align:var(--h3-align);
   margin-top:10pt;margin-bottom:4pt;
 }
 
 /* Paragraphs */
-#doc-content .dp{
+#doc-content .dp,.pdf-doc-content .dp{
   font-family:var(--body-font);font-size:var(--body-size);
   line-height:var(--body-lh);text-indent:2em;margin-bottom:5pt;
 }
-#doc-content .dp.no-indent{text-indent:0}
+#doc-content .dp.no-indent,.pdf-doc-content .dp.no-indent{text-indent:0}
 
 /* Formula blocks */
 .df-wrap{
@@ -371,18 +383,27 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
 
     <div class="sb-section">
       <div class="sb-title">📄 页眉与页码</div>
-      <div class="sb-label">页眉文本（每页相同）</div>
-      <input class="sb-input" id="s-header-text" value="东南大学本科生创新训练计划项目" oninput="applyPageDecorSettings()">
-      <div class="sb-label">页码位置（Word/PDF）</div>
-      <select class="sb-select" id="s-page-num-position" onchange="applyPageDecorSettings()">
+      <div class="sb-label">页眉文本</div>
+      <input class="sb-input" id="s-header-text" value="东南大学本科生创新训练计划项目" oninput="onPageDecorChange()">
+      <div class="sb-label">页眉文本位置</div>
+      <select class="sb-select" id="s-header-align" onchange="onPageDecorChange()">
+        <option value="left" selected>居左</option>
+        <option value="center">居中</option>
+        <option value="right">居右</option>
         <option value="none">不显示</option>
-        <option value="header-right" selected>页眉右侧</option>
-        <option value="header-center">页眉居中</option>
-        <option value="footer-center">页脚居中</option>
-        <option value="footer-right">页脚右侧</option>
       </select>
-      <div class="sb-label">页码格式（Word/PDF）</div>
-      <select class="sb-select" id="s-page-num-format" onchange="applyPageDecorSettings()">
+      <div class="sb-label">页码位置</div>
+      <select class="sb-select" id="s-page-num-position" onchange="onPageDecorChange()">
+        <option value="none">不显示</option>
+        <option value="header-left">页眉居左</option>
+        <option value="header-center">页眉居中</option>
+        <option value="header-right" selected>页眉居右</option>
+        <option value="footer-left">页脚居左</option>
+        <option value="footer-center">页脚居中</option>
+        <option value="footer-right">页脚居右</option>
+      </select>
+      <div class="sb-label">页码格式</div>
+      <select class="sb-select" id="s-page-num-format" onchange="onPageDecorChange()">
         <option value="cn">第 n 页</option>
         <option value="n">n</option>
         <option value="nN">n / N</option>
@@ -401,8 +422,9 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   <main id="main">
     <div id="document-page">
       <div class="pg-header">
-        <span id="pg-header-text">东南大学本科生创新训练计划项目</span>
-        <span id="pg-num">第 1 页</span>
+        <span id="pg-hdr-left">东南大学本科生创新训练计划项目</span>
+        <span id="pg-hdr-center"></span>
+        <span id="pg-hdr-right">第 1 页</span>
       </div>
       <div id="doc-content">
         <!-- injected by JS -->
@@ -935,12 +957,13 @@ function applyStyles() {
   set('--h2-align',   document.getElementById('s-h2align').value);
   set('--h3-size',    document.getElementById('s-h3size').value);
   set('--h3-align',   document.getElementById('s-h3align').value);
-  applyPageDecorSettings();
+  onPageDecorChange();
 }
 
 function getPageDecorSettings() {
   return {
     headerText: (document.getElementById('s-header-text')?.value || '').trim() || '东南大学本科生创新训练计划项目',
+    headerAlign: document.getElementById('s-header-align')?.value || 'left',
     pageNumPosition: document.getElementById('s-page-num-position')?.value || 'header-right',
     pageNumFormat: document.getElementById('s-page-num-format')?.value || 'cnN'
   };
@@ -958,17 +981,57 @@ function formatPageLabel(page, total, fmt) {
 
 function applyPageDecorSettings() {
   const cfg = getPageDecorSettings();
-  const h = document.getElementById('pg-header-text');
-  const n = document.getElementById('pg-num');
-  if (h) h.textContent = cfg.headerText;
-  if (!n) return;
-  if (cfg.pageNumPosition === 'none') {
-    n.style.visibility = 'hidden';
-    n.textContent = '';
-    return;
+  const spans = {
+    left:   document.getElementById('pg-hdr-left'),
+    center: document.getElementById('pg-hdr-center'),
+    right:  document.getElementById('pg-hdr-right')
+  };
+  for (const s of Object.values(spans)) { if (s) s.textContent = ''; }
+  if (cfg.headerAlign !== 'none' && spans[cfg.headerAlign]) {
+    spans[cfg.headerAlign].textContent = cfg.headerText;
   }
-  n.style.visibility = 'visible';
-  n.textContent = formatPageLabel(1, 1, cfg.pageNumFormat);
+  const pos = cfg.pageNumPosition;
+  if (pos !== 'none' && pos.startsWith('header-')) {
+    const side = pos.replace('header-', '');
+    if (spans[side]) spans[side].textContent = formatPageLabel(1, 1, cfg.pageNumFormat);
+  }
+}
+
+function updatePageDecorConflicts() {
+  const alignSel = document.getElementById('s-header-align');
+  const posSel   = document.getElementById('s-page-num-position');
+  if (!alignSel || !posSel) return;
+  const headerAlign = alignSel.value;
+  const pageNumPos  = posSel.value;
+  const alignToPos = { left: 'header-left', center: 'header-center', right: 'header-right' };
+  const posToAlign = { 'header-left': 'left', 'header-center': 'center', 'header-right': 'right' };
+  for (const opt of posSel.options)   opt.disabled = false;
+  for (const opt of alignSel.options) opt.disabled = false;
+  if (headerAlign !== 'none' && alignToPos[headerAlign]) {
+    const conflict = alignToPos[headerAlign];
+    for (const opt of posSel.options) {
+      if (opt.value === conflict) {
+        opt.disabled = true;
+        if (pageNumPos === conflict) posSel.value = 'none';
+        break;
+      }
+    }
+  }
+  if (posToAlign[pageNumPos]) {
+    const conflict = posToAlign[pageNumPos];
+    for (const opt of alignSel.options) {
+      if (opt.value === conflict) {
+        opt.disabled = true;
+        if (headerAlign === conflict) alignSel.value = 'none';
+        break;
+      }
+    }
+  }
+}
+
+function onPageDecorChange() {
+  updatePageDecorConflicts();
+  applyPageDecorSettings();
 }
 
 function loadTemplate(el) {
@@ -1763,116 +1826,104 @@ function stripInlineMath(text) {
    PDF EXPORT  –  uses html2pdf.js
    ============================================================ */
 async function exportToPDF() {
-  notify('⏳ 正在生成 PDF…', 10000);
-  await new Promise(r=>setTimeout(r,50));
+  notify('⏳ 正在生成 PDF…', 15000);
+  await new Promise(r => setTimeout(r, 60));
 
-  // wait up to 15s for html2pdf
-  const waitPdf = new Promise((res,rej) => {
-    if (window.html2pdf) { res(); return; }
-    const t0 = Date.now();
-    const iv = setInterval(()=>{
-      if (window.html2pdf) { clearInterval(iv); res(); }
-      else if (Date.now()-t0>15000) { clearInterval(iv); rej(new Error('html2pdf.js 加载超时，请检查网络后刷新')); }
-    },200);
-  });
-  try { await waitPdf; }
-  catch(e) { notify('❌ '+e.message, 6000); return; }
+  if (!window.html2pdf) {
+    const ok = await new Promise(resolve => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (window.html2pdf) { clearInterval(iv); resolve(true); }
+        else if (Date.now() - t0 > 15000) { clearInterval(iv); resolve(false); }
+      }, 200);
+    });
+    if (!ok) { notify('❌ html2pdf.js 加载超时，请检查网络后刷新', 6000); return; }
+  }
 
   const pageDecor = getPageDecorSettings();
   const sourcePage = document.getElementById('document-page');
   const sourceContent = document.getElementById('doc-content');
-  if (!sourcePage || !sourceContent) {
-    notify('❌ 未找到可导出的页面内容', 5000);
-    return;
-  }
+  if (!sourcePage || !sourceContent) { notify('❌ 未找到页面内容', 5000); return; }
 
-  const host = document.createElement('div');
-  host.style.position = 'fixed';
-  host.style.inset = '0';
-  host.style.zIndex = '2147483647';
-  host.style.background = '#f5f6f8';
-  host.style.padding = '12px 0';
-  host.style.overflow = 'auto';
+  const CSS_VARS = [
+    '--body-font','--body-size','--body-lh',
+    '--h1-font','--h1-size','--h1-weight','--h1-align',
+    '--h2-font','--h2-size','--h2-weight','--h2-align',
+    '--h3-font','--h3-size','--h3-weight','--h3-align'
+  ];
+  const srcCS = getComputedStyle(sourcePage);
 
-  const root = document.createElement('div');
-  root.className = 'pdf-export-root';
-  root.style.margin = '0 auto';
-  root.style.background = '#fff';
-  host.appendChild(root);
-  document.body.appendChild(host);
+  const container = document.createElement('div');
+  container.style.cssText = 'position:absolute;top:0;left:0;width:210mm;background:#fff;overflow:visible;z-index:2147483647;';
+  CSS_VARS.forEach(v => {
+    const val = srcCS.getPropertyValue(v).trim();
+    if (val) container.style.setProperty(v, val);
+  });
+  document.body.appendChild(container);
 
-  function makePdfPage() {
+  function makePage() {
     const page = document.createElement('div');
     page.className = 'pdf-export-page';
-    const header = document.createElement('div');
-    header.className = 'pdf-page-header';
-    const left = document.createElement('span');
-    left.textContent = pageDecor.headerText;
-    const right = document.createElement('span');
-    header.appendChild(left);
-    header.appendChild(right);
-    const content = document.createElement('div');
-    content.className = 'pdf-page-content';
-    const footer = document.createElement('div');
-    footer.className = 'pdf-page-footer';
-    const footerPage = document.createElement('span');
-    footer.appendChild(footerPage);
-    page.appendChild(header);
-    page.appendChild(content);
-    page.appendChild(footer);
-    root.appendChild(page);
-    return { page, header, right, content, footer, footerPage };
+    const hdr = document.createElement('div');
+    hdr.className = 'pdf-page-header';
+    ['left','center','right'].forEach(side => {
+      const s = document.createElement('span');
+      s.className = `hdr-${side}`;
+      hdr.appendChild(s);
+    });
+    const contentOuter = document.createElement('div');
+    contentOuter.className = 'pdf-page-content';
+    const contentInner = document.createElement('div');
+    contentInner.className = 'pdf-doc-content';
+    contentOuter.appendChild(contentInner);
+    const ftr = document.createElement('div');
+    ftr.className = 'pdf-page-footer';
+    ['left','center','right'].forEach(side => {
+      const s = document.createElement('span');
+      s.className = `ftr-${side}`;
+      ftr.appendChild(s);
+    });
+    page.appendChild(hdr);
+    page.appendChild(contentOuter);
+    page.appendChild(ftr);
+    container.appendChild(page);
+    return { contentOuter, contentInner };
   }
 
   try {
-    let current = makePdfPage();
-    const blocks = Array.from(sourceContent.children);
-    for (const block of blocks) {
+    let cur = makePage();
+    for (const block of Array.from(sourceContent.children)) {
       const clone = block.cloneNode(true);
-      if (clone.classList && clone.classList.contains('dh1') && clone.textContent.trim() === '参考文献' && current.content.children.length > 0) {
-        current = makePdfPage();
+      if (clone.classList?.contains('dh1') &&
+          clone.textContent.trim() === '参考文献' &&
+          cur.contentInner.children.length > 0) {
+        cur = makePage();
       }
-      current.content.appendChild(clone);
-      if (current.content.scrollHeight > current.content.clientHeight + 1) {
-        current.content.removeChild(clone);
-        current = makePdfPage();
-        current.content.appendChild(clone);
+      cur.contentInner.appendChild(clone);
+      if (cur.contentOuter.scrollHeight > cur.contentOuter.clientHeight + 2) {
+        cur.contentInner.removeChild(clone);
+        cur = makePage();
+        cur.contentInner.appendChild(clone);
       }
     }
 
-    const pages = Array.from(root.querySelectorAll('.pdf-export-page'));
+    const pages = Array.from(container.querySelectorAll('.pdf-export-page'));
     const total = pages.length || 1;
-    pages.forEach((p, i) => {
-      const idx = i + 1;
-      const headerRight = p.querySelector('.pdf-page-header span:last-child');
-      const footerSpan = p.querySelector('.pdf-page-footer span');
-      const label = formatPageLabel(idx, total, pageDecor.pageNumFormat);
-      headerRight.textContent = '';
-      footerSpan.textContent = '';
-      headerRight.style.display = 'none';
-      footerSpan.style.display = 'none';
-      p.querySelector('.pdf-page-header').style.justifyContent = 'space-between';
-      p.querySelector('.pdf-page-footer').style.textAlign = 'right';
-      p.querySelector('.pdf-page-header span:first-child').style.display = '';
-      if (pageDecor.pageNumPosition === 'header-right') {
-        headerRight.style.display = '';
-        headerRight.textContent = label;
-      } else if (pageDecor.pageNumPosition === 'header-center') {
-        headerRight.style.display = '';
-        p.querySelector('.pdf-page-header').style.justifyContent = 'center';
-        headerRight.textContent = label;
-        p.querySelector('.pdf-page-header span:first-child').style.display = 'none';
-      } else if (pageDecor.pageNumPosition === 'footer-center') {
-        footerSpan.style.display = '';
-        p.querySelector('.pdf-page-footer').style.textAlign = 'center';
-        footerSpan.textContent = label;
-      } else if (pageDecor.pageNumPosition === 'footer-right') {
-        footerSpan.style.display = '';
-        footerSpan.textContent = label;
+    pages.forEach((page, i) => {
+      const label = formatPageLabel(i + 1, total, pageDecor.pageNumFormat);
+      if (pageDecor.headerAlign !== 'none') {
+        const sp = page.querySelector(`.hdr-${pageDecor.headerAlign}`);
+        if (sp) sp.textContent = pageDecor.headerText;
+      }
+      const pos = pageDecor.pageNumPosition;
+      if (pos !== 'none') {
+        const [area, side] = pos.split('-');
+        const sp = page.querySelector(`.${area === 'header' ? 'hdr' : 'ftr'}-${side}`);
+        if (sp) sp.textContent = label;
       }
     });
 
-    root.querySelectorAll('.pdf-page-content .df-wrap, .pdf-page-content .df-figure').forEach(el => {
+    container.querySelectorAll('.df-wrap,.df-figure').forEach(el => {
       el.style.breakInside = 'avoid';
       el.style.pageBreakInside = 'avoid';
     });
@@ -1880,26 +1931,27 @@ async function exportToPDF() {
     const opt = {
       margin: 0,
       filename: '结项报告.pdf',
-      image: { type:'jpeg', quality:0.97 },
+      image: { type: 'jpeg', quality: 0.97 },
       html2canvas: {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         letterRendering: true,
         scrollX: 0,
         scrollY: 0,
-        windowWidth: Math.max(host.scrollWidth, root.scrollWidth, 794),
-        windowHeight: Math.max(host.scrollHeight, root.scrollHeight, 1123)
+        width:  container.offsetWidth  || 794,
+        height: container.offsetHeight || 1123
       },
-      pagebreak: { mode:['css','legacy'] },
-      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+      pagebreak: { mode: ['css', 'legacy'] },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    await html2pdf().set(opt).from(root).save();
+    await html2pdf().set(opt).from(container).save();
     notify('✅ PDF 下载成功！', 3000);
   } catch (e) {
-    notify('❌ PDF 生成失败：'+e.message, 5000);
+    notify('❌ PDF 生成失败：' + e.message, 5000);
   } finally {
-    host.remove();
+    container.remove();
   }
 }
 
@@ -1921,6 +1973,7 @@ function runKaTeX() {
 
 window.addEventListener('load', () => {
   renderContent();
+  updatePageDecorConflicts();
   applyStyles();
   // KaTeX may already be loaded (fast CDN) or arrive later via dynamic loader
   if (window.renderMathInElement) {
