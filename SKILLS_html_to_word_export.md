@@ -4,7 +4,9 @@
 
 ---
 
-## 一、整体架构
+## 一、总体架构与依赖
+
+### 1.1 整体数据流
 
 ```
 HTML 网页（编辑/预览）
@@ -20,21 +22,21 @@ exportToDocx()  ← 纯前端，运行在浏览器
     │       ├─ 普通段落  → Paragraph + TextRun
     │       ├─ 标题      → Paragraph + TextRun (bold, spacing)
     │       ├─ 含公式段落→ parseMathSegments → TextRun + Math (OMML)
-    │       └─ 独立公式  → buildMathForLatex → Math (OMML)
-    ├─ 4. 构建 Document（页面尺寸、页边距、页眉）
+    │       ├─ 独立公式  → buildMathForLatex → Math (OMML)
+    │       └─ 图片      → buildImagePara → ImageRun + 图注
+    ├─ 4. 构建 Document（页面尺寸、页边距、页眉、页码）
     ├─ 5. Packer.toBlob(doc)
     └─ 6. FileSaver.saveAs(blob, 'xxx.docx')
 ```
 
----
-
-## 二、关键依赖库（CDN 方式引入）
+### 1.2 关键依赖库（CDN 方式引入）
 
 | 库 | 版本 | 作用 | CDN |
 |---|---|---|---|
 | **docx.js** | 8.x | 构建 `.docx` 的所有元素（段落、文字、公式、页眉等） | `https://unpkg.com/docx@8/build/index.js` |
 | **FileSaver.js** | 2.x | `saveAs(blob, filename)` 触发浏览器下载 | `https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js` |
 | **KaTeX** | 0.16.x | LaTeX → MathML 解析（用于后续转 OMML） | `https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js` + auto-render |
+| **html2pdf.js** | 0.10.x | HTML → PDF 截图导出 | `https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js` |
 
 > **加载顺序陷阱**：docx.js 和 FileSaver 体积大，常在 `window.onload` 触发时还未完成加载。
 > 必须用轮询等待：
@@ -53,67 +55,87 @@ exportToDocx()  ← 纯前端，运行在浏览器
 
 ---
 
-## 三、docx.js 核心 API 速查
+## 二、内容层：CONTENT 数组与块类型
 
-### 3.1 单位换算（必记）
+`CONTENT` 是页面内容的中心数据模型，每个元素描述一个逻辑块，同时驱动 HTML 预览渲染和 DOCX/PDF 导出。
 
-| CSS 单位 | docx 单位 | 换算 |
+### 2.1 块类型总览
+
+| `type` 值 | 含义 | 关键字段 |
 |---|---|---|
-| pt | half-point | `Math.round(pt * 2)` |
-| cm | twip | `cm * 567` (1cm = 566.93 twips) |
-| pt（行距） | twip | `pt * 20` |
-| 字符宽度（首行缩进）| twip | `bodySize_halfpt / 2 * 2 * 20` = `bodySize_halfpt * 20` |
+| `'h1'` / `'h2'` / `'h3'` | 标题（一/二/三级） | `text` |
+| `'p'` | 正文段落（可含 `$...$` 公式） | `text`, `indent` |
+| `'math'` | 独立显示公式（居中，不含其他文字） | `text`（纯 LaTeX） |
+| `'img'` | 图片块 | `src`, `widthPt`, `heightPt`, `caption` |
 
-### 3.2 常用对象
+### 2.2 文本块与样式同步（CSS 变量 ↔ docx 属性）
+
+HTML 预览使用 CSS 变量实时更新，导出时读取同一套值：
 
 ```js
-const D = window.docx;
+// HTML 侧：CSS 变量
+document.getElementById('document-page').style.setProperty('--body-size', '12pt');
 
-// 文字片段
-new D.TextRun({ text, font: 'SimSun', size: 24, bold: true, italic: false, color: '000000' })
-
-// 段落
-new D.Paragraph({
-  children: [...],                              // TextRun / Math 数组
-  alignment: D.AlignmentType.CENTER,           // LEFT / CENTER / RIGHT / JUSTIFIED
-  spacing: { before: 480, after: 240,          // twips
-             line: 480, lineRule: D.LineRuleType.AUTO },
-  indent: { firstLine: 480, left: 480, hanging: 480 }
-})
-
-// 数学公式（OMML 包装器）
-new D.Math({ children: ommlElements })
-
-// 文档
-new D.Document({
-  styles: { paragraphStyles: [] },
-  sections: [{
-    properties: { page: { margin: { top, bottom, left, right, gutter } } },
-    headers: { default: new D.Header({ children: [...] }) },
-    children: docChildren
-  }]
-})
-
-// 导出
-const blob = await D.Packer.toBlob(doc);
-saveAs(blob, 'file.docx');
+// 导出侧：从 <select> 读取相同值
+const bodySize = ptToHalfPt(document.getElementById('s-bsize').value);  // "12pt" → 24
+const bodyFontName = getDocxFontName(document.getElementById('s-bfont').value);
+// "SimSun,'宋体',serif" → "SimSun"
 ```
 
-### 3.3 页面尺寸（A4，SEU 格式示例）
+字体名称对应关系（中文 Word 字体）：
+
+| CSS 名称 | docx 字体名 |
+|---|---|
+| `'Microsoft YaHei'` | `Microsoft YaHei` |
+| `'SimSun'` / `'宋体'` | `SimSun` |
+| `'SimHei'` / `'黑体'` | `SimHei` |
+| `'KaiTi'` / `'楷体'` | `KaiTi` |
+| `'FangSong'` / `'仿宋'` | `FangSong` |
+
+### 2.3 公式块
+
+#### 2.3.1 内联公式与显示公式的分段解析
+
+段落文字中混合文本和 `$...$` / `$$...$$`，需先分段再分别处理：
 
 ```js
-margin: {
-  top:    1134,  // 2 cm
-  bottom: 1134,  // 2 cm
-  left:   1417,  // 2.5 cm (含装订线)
-  right:  1134,  // 2 cm
-  gutter: 284    // 0.5 cm 装订线
+function parseMathSegments(text) {
+  const segs = [];
+  let i = 0;
+  while (i < text.length) {
+    // 先检测 $$ (双美元，display math)
+    if (text[i] === '$' && text[i+1] === '$') {
+      const end = text.indexOf('$$', i+2);
+      if (end !== -1) { segs.push({math:true, s:text.slice(i+2,end)}); i=end+2; continue; }
+    }
+    // 再检测 $ (inline math)
+    if (text[i] === '$') {
+      const end = text.indexOf('$', i+1);
+      if (end !== -1) { segs.push({math:true, s:text.slice(i+1,end)}); i=end+1; continue; }
+    }
+    // 普通文本
+    const next$ = text.indexOf('$', i);
+    const chunk = next$ === -1 ? text.slice(i) : text.slice(i, next$);
+    if (chunk) segs.push({math:false, s:chunk});
+    if (next$ === -1) break;
+    i = next$;
+  }
+  return segs;
 }
 ```
 
----
+然后：
+```js
+for (const seg of segs) {
+  if (seg.math) {
+    children.push(new D.Math({ children: latexToOmml(seg.s) }));
+  } else {
+    children.push(new D.TextRun({ text: seg.s, ... }));
+  }
+}
+```
 
-## 四、LaTeX → Word 公式（OMML）的完整流程
+#### 2.3.2 LaTeX → OMML 完整转换流程
 
 这是整个功能最复杂的部分，分三层：
 
@@ -130,7 +152,7 @@ docx OMML 元素数组
 new D.Math({ children: ommlElements })
 ```
 
-### 4.1 第一层：KaTeX 解析 LaTeX → MathML 字符串
+**第一层：KaTeX 解析 LaTeX → MathML 字符串**
 
 ```js
 const html = katex.renderToString(latex, { output: 'mathml', throwOnError: false });
@@ -142,14 +164,14 @@ const mathEl = div.querySelector('math');
 > **关键**：KaTeX 的 MathML 输出结构是 `math > semantics > mrow > [内容]`，
 > `semantics` 下还有 `annotation` 节点（含原始 LaTeX 字符串），需要跳过。
 
-### 4.2 第二层：MathML → OMML 递归转换（核心映射表）
+**第二层：MathML → OMML 递归转换（核心映射表）**
 
 | MathML 标签 | docx 对象 | 说明 |
 |---|---|---|
 | `math`, `mstyle`, `mpadded`, `merror` | 直接展开子节点 | 容器节点 |
 | `semantics` | `mathmlNodeToOmml(children[0])` | **必须用 mathmlNodeToOmml 而非 childOmml** |
 | `annotation`, `annotation-xml` | 忽略（返回 `[]`） | 含原始 LaTeX，不需要 |
-| `mrow` | `tryFencedMrow` 或展开子节点 | 见 §4.3 |
+| `mrow` | `tryFencedMrow` 或展开子节点 | 见下文定界符小节 |
 | `mi`, `mn`, `mo`, `mtext` | `new D.MathRun(text)` | 原子文本 |
 | `mspace` | `new D.MathRun('\u00a0')` | 空白 |
 | `mfrac` | `new D.MathFraction({ numerator, denominator })` | 分数 |
@@ -158,14 +180,14 @@ const mathEl = div.querySelector('math');
 | `msub` | `new D.MathSubScript({ children, subScript })` | 下标 |
 | `msup` | `new D.MathSuperScript({ children, superScript })` | 上标 |
 | `msubsup` | `new D.MathSubSuperScript({ children, subScript, superScript })` | 上下标 |
-| `mover` (accent=true) | `buildAccent(accentChar, base)` | 见 §4.4 |
+| `mover` (accent=true) | `buildAccent(accentChar, base)` | 见下文重音小节 |
 | `mover` (accent≠true) | `MathSuperScript` | 极限上标等 |
 | `munder` | `MathSubScript` | 极限下标等 |
 | `munderover` | `MathSubSuperScript` | 求和上下标 |
-| `mtable` | 按行拼接，行间插入 `'; '` | 矩阵/cases 降级处理 |
+| `mtable` | 按列展开，见下文多行公式小节 | 矩阵/cases |
 | 其他 | `childOmml(node)` | 安全展开 |
 
-### 4.3 带定界符的 `\left...\right`（tryFencedMrow）
+**定界符 `\left...\right`（tryFencedMrow）**
 
 KaTeX 将 `\left( ... \right)` 渲染为：
 ```xml
@@ -187,7 +209,7 @@ function isFenceMo(el) {
 
 `\middle|` 产生中间的 `fence="true"` 节点，成为多段分隔符。
 
-**生成的 OMML**：`<m:d>` 定界符元素，通过 `XmlComponent` 手动构建：
+生成的 OMML：`<m:d>` 定界符元素，通过 `XmlComponent` 手动构建：
 ```js
 // 简单括号可复用 docx.js 内置类：
 new D.MathRoundBrackets({ children })   // ( )
@@ -201,7 +223,7 @@ const dPr = new D.XmlComponent('m:dPr');
 // 注意：OMML 默认值是 ( | )，相应的默认值可以省略属性
 ```
 
-### 4.4 重音符号（buildAccent）
+**重音符号（buildAccent）**
 
 KaTeX 将 `\widetilde{x}` 渲染为：
 ```xml
@@ -243,11 +265,514 @@ if (accPr.root.length) acc.root.push(accPr);
 acc.root.push(new D.MathBase(baseChildren));
 ```
 
+#### 2.3.3 多行公式（m:eqArr / m:m）
+
+LaTeX 的 `\begin{cases}` / `\begin{aligned}` / `\begin{align}` 等多行环境，
+KaTeX 将其渲染为 `<mtable>` 结构（MathML 表格）。
+若直接把各行拼成一行，Word 导出后公式失去换行结构，排版混乱。
+
+**OMML 多行元素**
+
+| OMML 元素 | 用途 | 对应 LaTeX 环境 |
+|---|---|---|
+| `<m:eqArr>` | 方程数组（每行独立换行） | `cases`, `aligned`, `align`, `gather` |
+| `<m:m>` | 矩阵（行+列） | `pmatrix`, `bmatrix`, `vmatrix`, etc. |
+
+eqArr 结构：
+```xml
+<m:eqArr>
+  <m:e><!-- 第1行内容 --></m:e>
+  <m:e><!-- 第2行内容 --></m:e>
+</m:eqArr>
+```
+
+matrix 结构：
+```xml
+<m:m>
+  <m:mr>
+    <m:e><!-- cell(0,0) --></m:e>
+    <m:e><!-- cell(0,1) --></m:e>
+  </m:mr>
+</m:m>
+```
+
+**构建函数**
+
+```js
+/** 方程数组：rowContents[i] = 第i行的 OMML 元素数组 */
+function buildEqArr(rowContents) {
+  const eqArr = new D.XmlComponent('m:eqArr');
+  for (const rowContent of rowContents) {
+    const e = new D.XmlComponent('m:e');
+    e.root.push(...rowContent);
+    eqArr.root.push(e);
+  }
+  return eqArr;
+}
+
+/** 矩阵：rows2d[i][j] = 第i行第j列的 OMML 元素数组 */
+function buildMatrix(rows2d) {
+  const m = new D.XmlComponent('m:m');
+  for (const cells of rows2d) {
+    const mr = new D.XmlComponent('m:mr');
+    for (const cell of cells) {
+      const e = new D.XmlComponent('m:e');
+      e.root.push(...cell);
+      mr.root.push(e);
+    }
+    m.root.push(mr);
+  }
+  return m;
+}
+```
+
+**分发逻辑**
+
+情形1：`<mtable>` 在 fence mrow 内（由 `tryFencedMrow` 处理）
+
+```js
+const innerEls = innerNodes.filter(n => n.nodeType === Node.ELEMENT_NODE);
+if (innerEls.length === 1 && innerTag === 'mtable') {
+  const rows2d = /* 将 mtd 内容转为 OMML 二维数组 */;
+  const maxCols = Math.max(...rows2d.map(r => r.length));
+  const isMatrixFence = '(['.includes(begChar) && '(['.includes(endChar);
+
+  if (maxCols > 1 && isMatrixFence) {
+    // pmatrix / bmatrix 等多列矩阵
+    return mkDelimiter(begChar, null, endChar, [[buildMatrix(rows2d)]]);
+  } else {
+    // cases（单列，begChar='{'）或其他单列有界环境
+    const rowContents = rows2d.map(r => r.flat());
+    return mkDelimiter(begChar, null, endChar, [[buildEqArr(rowContents)]]);
+  }
+}
+```
+
+情形2：独立 `<mtable>`（`mathmlNodeToOmml` 的 `mtable` case）
+
+```js
+case 'mtable': {
+  // align / aligned / gather / array 等无 fence 的多行环境
+  const rows2d = Array.from(node.children).map(mtr =>
+    Array.from(mtr.children).map(mtd => {
+      const out = [];
+      for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
+      return out;
+    })
+  );
+  if (rows2d.length === 0) return [];
+  // 多列 align 的左右对齐列合并为一行（x &= y → [x,=,y]）
+  const rowContents = rows2d.map(r => r.flat());
+  return [buildEqArr(rowContents)];
+}
+```
+
+cases 端到端示例：
+
+LaTeX：`\begin{cases} q^* = \varphi(q^*) \\ Aq^* = 0 \end{cases}`
+
+```xml
+<!-- KaTeX MathML（简化） -->
+<mrow>
+  <mo fence="true">{</mo>
+  <mtable>
+    <mtr><mtd><mrow>q* = φ(q*)</mrow></mtd></mtr>
+    <mtr><mtd><mrow>Aq* = 0</mrow></mtd></mtr>
+  </mtable>
+  <mo fence="true"></mo>   <!-- 空字符结尾 = 无右括号 -->
+</mrow>
+```
+
+处理流程：
+1. `mathmlNodeToOmml(mrow)` → `tryFencedMrow`
+2. begChar=`{`，endChar=`""`（空），无中间 fence
+3. innerEls=[mtable]，单列 → `buildEqArr` + `mkDelimiter('{', null, '', [...])`
+4. OMML：`<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/></m:dPr><m:e><m:eqArr>...</m:eqArr></m:e></m:d>`
+
+Word 最终效果：
+```
+⎧ q* = φ(q*)
+⎨
+⎩ Aq* = 0
+```
+
+> 注意：`endChar = ""` 对应 OMML `<m:endChr m:val=""/>` → Word 显示无右括号（cases 正确行为）。
+> 嵌套多行（如 `\begin{cases}` 内含 `\begin{aligned}`）：递归调用 `mathmlNodeToOmml` 自然处理。
+
+### 2.4 图片块
+
+#### 2.4.1 数据结构
+
+```js
+{
+  type: 'img',
+  src: 'data:image/jpeg;base64,/9j/4AAQ…',  // base64 data URL（JPEG / PNG）
+  caption: '图1. 仿真轨迹示意图。',           // 可选图注
+  widthPt: 440,    // 展示宽度（pt），用于 HTML max-width 和 docx ImageRun
+  heightPt: 329,   // 对应高度（pt），保持纵横比
+}
+```
+
+> `src` 推荐使用 `data:image/jpeg;base64,…` 格式，完全内嵌在 HTML 文件中，无需外部依赖。
+> 使用 Python `base64.b64encode(raw).decode()` 生成，再拼接前缀即可。
+
+#### 2.4.2 HTML 渲染（renderContent）
+
+```js
+case 'img': {
+  const cap  = item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : '';
+  const style = item.widthPt ? ` style="max-width:${item.widthPt}pt"` : '';
+  html += `<figure class="df-figure">
+    <img src="${item.src}"${style} alt="${escAttr(item.caption || '')}">
+    ${cap}
+  </figure>`;
+  break;
+}
+```
+
+CSS 样式：
+
+```css
+.df-figure {
+  display: block; margin: 14pt auto; text-align: center;
+}
+.df-figure img {
+  max-width: 100%; height: auto; display: block; margin: 0 auto;
+}
+.df-figure figcaption {
+  font-family: var(--body-font); font-size: var(--body-size);
+  line-height: var(--body-lh); color: #333;
+  margin-top: 5pt; text-align: center;
+}
+```
+
+#### 2.4.3 DOCX 导出（exportToDocx）
+
+```js
+/** image src（data URL / base64 / http(s) URL）→ Uint8Array */
+async function b64ToUint8(src) {
+  if (!src) return null;
+  const isDataUrl = src.startsWith('data:');
+  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//');
+  if (isDataUrl || !isUrl) {
+    const b64 = src.includes(',') ? src.split(',')[1] : src;
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(`Image fetch failed for ${src}: ${response.status}`);
+  const buf = await response.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+async function buildImagePara(src, widthPt, heightPt, caption) {
+  const imageRun = new D.ImageRun({
+    data: await b64ToUint8(src),
+    transformation: { width: widthPt, height: heightPt }
+  });
+  const imgPara = new D.Paragraph({
+    children: [imageRun],
+    alignment: D.AlignmentType.CENTER,
+    spacing: { before: 120, after: caption ? 60 : 180 }
+  });
+  if (!caption) return [imgPara];
+  const capPara = new D.Paragraph({
+    children: [new D.TextRun({ text: caption, font: bodyFontName, size: bodySize, italics: true })],
+    alignment: D.AlignmentType.CENTER,
+    spacing: { after: 180 }
+  });
+  return [imgPara, capPara];
+}
+```
+
+在 `switch(item.type)` 中：
+
+```js
+case 'img': {
+  const wPt = item.widthPt || 400;
+  const hPt = item.heightPt || Math.round(wPt * 0.75);
+  docChildren.push(...await buildImagePara(item.src, wPt, hPt, item.caption || ''));
+  break;
+}
+```
+
+> docx.js 版本注意：`ImageRun` 的 `transformation` 在 7.x 和 8.x 中均支持 pt 单位（内部自动转换为 EMU：1pt = 12700 EMU）。
+
+#### 2.4.4 图片来源：从 PDF 提取（Python）
+
+```python
+import fitz   # pip install pymupdf
+import base64
+from PIL import Image
+from io import BytesIO
+
+def extract_and_encode(pdf_path, page_idx, clip_rect, scale=2.2, quality=85):
+    """提取 PDF 特定页面的裁切区域，返回 base64 JPEG 字符串和尺寸。"""
+    doc = fitz.open(pdf_path)
+    page = doc[page_idx]
+    clip = fitz.Rect(*clip_rect)       # (x0, y0, x1, y1) in points
+    mat  = fitz.Matrix(scale, scale)   # 放大倍率
+    pix  = page.get_pixmap(matrix=mat, clip=clip)
+
+    img = Image.open(BytesIO(pix.tobytes('png'))).convert('RGB')
+    if img.width > 1200:               # 限制最大宽度节省体积
+        h = round(img.height * 1200 / img.width)
+        img = img.resize((1200, h), Image.LANCZOS)
+
+    buf = BytesIO()
+    img.save(buf, 'JPEG', quality=quality)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    return f'data:image/jpeg;base64,{b64}', img.size
+
+# 示例：提取论文第5页（索引4）上半部分的仿真轨迹图
+src, (w, h) = extract_and_encode(
+    'paper.pdf', page_idx=4,
+    clip_rect=(0, 10, 612, 468),       # PDF坐标（pt），A4宽612pt
+    scale=2.2, quality=85
+)
+# clip_rect 使用 PDF 点坐标（1pt = 1/72 inch）。
+# 可先用 page.rect 获取页面尺寸，再在 PDF 查看器中测量目标区域，
+# 或先导出整页图像后在图像编辑器中读出像素范围，再按比例换算为 pt。
+target_w = 440
+target_h = round(target_w * h / w)
+entry = f"{{type:'img',src:'{src}',caption:'图1. ...',widthPt:{target_w},heightPt:{target_h}}}"
+```
+
+#### 2.4.5 图片来源：从 DOCX 提取（Python）
+
+```python
+import zipfile, base64
+from PIL import Image
+from io import BytesIO
+
+def extract_from_docx(docx_path, max_w=1100, quality=82):
+    """从 .docx 文件中提取所有嵌入图片，返回 [(data_url, (w, h)), ...] 列表。"""
+    results = []
+    with zipfile.ZipFile(docx_path) as z:
+        media = sorted(n for n in z.namelist() if n.startswith('word/media/'))
+        for name in media:
+            raw = z.read(name)
+            img = Image.open(BytesIO(raw)).convert('RGB')
+            if img.width > max_w:
+                h = round(img.height * max_w / img.width)
+                img = img.resize((max_w, h), Image.LANCZOS)
+            buf = BytesIO()
+            img.save(buf, 'JPEG', quality=quality)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            results.append((f'data:image/jpeg;base64,{b64}', img.size))
+    return results
+```
+
 ---
 
-## 五、关键 Bug 记录（已修复）
+## 三、Word 导出（docx.js）
 
-### Bug 1：所有 `\left...\right` 定界符渲染成三个散字符
+### 3.1 核心 API 速查
+
+**单位换算（必记）**
+
+| CSS 单位 | docx 单位 | 换算 |
+|---|---|---|
+| pt | half-point | `Math.round(pt * 2)` |
+| cm | twip | `cm * 567` (1cm = 566.93 twips) |
+| pt（行距） | twip | `pt * 20` |
+| 字符宽度（首行缩进）| twip | `bodySize_halfpt / 2 * 2 * 20` = `bodySize_halfpt * 20` |
+
+**常用对象**
+
+```js
+const D = window.docx;
+
+// 文字片段
+new D.TextRun({ text, font: 'SimSun', size: 24, bold: true, italic: false, color: '000000' })
+
+// 段落
+new D.Paragraph({
+  children: [...],                              // TextRun / Math 数组
+  alignment: D.AlignmentType.CENTER,           // LEFT / CENTER / RIGHT / JUSTIFIED
+  spacing: { before: 480, after: 240,          // twips
+             line: 480, lineRule: D.LineRuleType.AUTO },
+  indent: { firstLine: 480, left: 480, hanging: 480 }
+})
+
+// 数学公式（OMML 包装器）
+new D.Math({ children: ommlElements })
+
+// 文档
+new D.Document({
+  styles: { paragraphStyles: [] },
+  sections: [{
+    properties: { page: { margin: { top, bottom, left, right, gutter } } },
+    headers: { default: new D.Header({ children: [...] }) },
+    children: docChildren
+  }]
+})
+
+// 导出
+const blob = await D.Packer.toBlob(doc);
+saveAs(blob, 'file.docx');
+```
+
+**页面尺寸（A4，SEU 格式示例）**
+
+```js
+margin: {
+  top:    1134,  // 2 cm
+  bottom: 1134,  // 2 cm
+  left:   1417,  // 2.5 cm (含装订线)
+  right:  1134,  // 2 cm
+  gutter: 284    // 0.5 cm 装订线
+}
+```
+
+### 3.2 分页、页眉与页码
+
+**功能目标**
+
+- 页码支持 Word/PDF 同步配置：
+  - 位置：不显示 / 页眉右侧 / 页眉居中 / 页脚居中 / 页脚右侧
+  - 格式：`n`、`第 n 页`、`n / N`、`第 n 页 / 共 N 页`
+- 页眉支持自定义输入，并在所有页面统一生效
+
+**UI 配置**
+
+```html
+<input id="s-header-text">
+<select id="s-page-num-position">...</select>
+<select id="s-page-num-format">...</select>
+```
+
+```js
+function getPageDecorSettings() {
+  return {
+    headerText: ...,
+    pageNumPosition: ...,
+    pageNumFormat: ...
+  };
+}
+```
+
+**docx.js 实现要点**
+
+- `headers.default` 始终写入自定义页眉文本
+- 页码在 `headers` 或 `footers` 中根据位置插入
+- 使用 `docx.PageNumber.CURRENT` / `docx.PageNumber.TOTAL_PAGES` 组合页码文本
+
+```js
+new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNumber.TOTAL_PAGES, ' 页'] })
+```
+
+---
+
+## 四、PDF 导出（html2pdf.js）
+
+### 4.1 基础用法
+
+```js
+html2pdf().set({
+  margin: 0,
+  filename: 'report.pdf',
+  image: { type: 'jpeg', quality: 0.97 },
+  html2canvas: { scale: 2, useCORS: true },  // scale:2 保证清晰度
+  jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+}).from(document.getElementById('document-page')).save();
+```
+
+> **优点**：数学公式由 KaTeX 渲染好再截图，字体完全与网页一致。
+> **缺点**：无法矢量化文字，文字层不可选中；中文字体需依赖系统字体。
+
+### 4.2 分页与页码实现
+
+- 不直接导出整页长 DOM；改为构建临时容器，每个 `.pdf-export-page` 固定 A4 高度（297mm）
+- 内容区逐块填充：超高即新建下一页；遇到显式分页点（如"参考文献"）强制换页
+- 生成完总页数后，回填每页页码文本，再调用 `html2pdf`
+
+```js
+let cur = makePage();
+for (const block of Array.from(sourceContent.children)) {
+  const clone = block.cloneNode(true);
+  // 强制换页逻辑
+  if (clone.classList?.contains('dh1') &&
+      clone.textContent.trim() === '参考文献' &&
+      cur.contentInner.children.length > 0) {
+    cur = makePage();
+  }
+  cur.contentInner.appendChild(clone);
+  if (cur.contentOuter.scrollHeight > cur.contentOuter.clientHeight + 2) {
+    cur.contentInner.removeChild(clone);
+    cur = makePage();
+    cur.contentInner.appendChild(clone);
+  }
+}
+```
+
+### 4.3 空白页问题排查与规范
+
+PDF 导出中出现多余空白页有两类来源，需分别处理：
+
+#### A. 每页后都有空白页（双重断页）
+
+原因：`.pdf-export-page` 设置了 `page-break-after: always`，同时 html2pdf 选项 `pagebreak: { mode: ['css', 'legacy'] }` 会扫描该属性并调用 `jsPDF.addPage()`，与自然按高度切页叠加，导致每页内容后插入一张空白页。
+
+**修复方法**：禁用 html2pdf 的 CSS 断页扫描：
+```js
+pagebreak: { mode: [] }
+```
+此时每个 297mm 高度的 div 自然对应一页，无需额外断页指令。
+
+#### B. 最后一页多一张空白页（像素取整溢出）
+
+原因：CSS `height: 297mm` 在浏览器中转为像素时向上取整（297/25.4×96 = 1122.52 → 1123px），而 html2pdf 内部按 `Math.floor(canvasWidth × 297/210)` 计算每页像素高度。两者不完全整除时，`Math.ceil(totalHeight / pageHeight)` 会多出 1 页空白。
+
+**修复方法**：将 `html2canvas.height` 设为与 html2pdf 内部 `pxPageHeight` 一致的整数倍：
+```js
+html2canvas: {
+  width:  container.offsetWidth  || 794,
+  height: Math.floor((container.offsetWidth || 794) * 297 / 210) * pages.length
+}
+```
+这样 `canvas.height / pxPageHeight = pages.length`，整除无余，不生成额外页。
+
+### 4.4 兼容性建议
+
+- `TOTAL_PAGES` 不可用时，自动降级为仅显示当前页码
+- 对公式块、图块设置 `break-inside: avoid`，减少跨页切断
+
+---
+
+## 五、参考与调试
+
+### 5.1 MathML → OMML 覆盖情况
+
+| LaTeX 类别 | KaTeX MathML 标签 | OMML 处理 | 状态 |
+|---|---|---|---|
+| 分数 `\frac` | `<mfrac>` | `MathFraction` | ✅ |
+| 平方根 `\sqrt` | `<msqrt>` | `MathRadical` | ✅ |
+| n次根 `\sqrt[n]` | `<mroot>` | `MathRadical` with degree | ✅ |
+| 下标 `_` | `<msub>` | `MathSubScript` | ✅ |
+| 上标 `^` | `<msup>` | `MathSuperScript` | ✅ |
+| 上下标 `_^` | `<msubsup>` | `MathSubSuperScript` | ✅ |
+| 重音 `\hat\bar\vec` 等 | `<mover accent="true">` | `m:acc` via XmlComponent | ✅ |
+| 极限上标 `\overset` | `<mover accent≠true>` | `MathSuperScript`（降级）| ⚠️ |
+| 极限下标 `\underset` | `<munder>` | `MathSubScript`（降级）| ⚠️ |
+| 定积分上下限 `\munderover` | `<munderover>` | `MathSubSuperScript` | ✅ |
+| `\left...\right` 定界符 | `<mrow>` with fence mo | `m:d` via XmlComponent | ✅ |
+| `\middle` | fence mo 中间节点 | 多段 `m:d` | ✅ |
+| 矩阵 `pmatrix/bmatrix` | `<mrow>+<mtable>` (多列) | `m:m` via XmlComponent（在 tryFencedMrow 检测）| ✅ |
+| cases 环境 | `<mrow fence={>+<mtable>` (单列) | `m:eqArr` via XmlComponent（换行分行）| ✅ |
+| align/aligned 环境 | 独立 `<mtable>` | `m:eqArr`（多列单元格合并后换行）| ✅ |
+| 文本 `\text{}` | `<mtext>` | `MathRun` | ✅ |
+| 空白 `\;` 等 | `<mspace>` | `MathRun('\u00a0')` | ✅ |
+| 希腊字母 | `<mi>` | `MathRun`（直接 Unicode）| ✅ |
+| 运算符 `+−×÷` 等 | `<mo>` | `MathRun` | ✅ |
+
+> ⚠️ = 功能性降级，输出可读但非完美排版。
+
+### 5.2 已知 Bug 与修复
+
+**Bug 1：所有 `\left...\right` 定界符渲染成三个散字符**
 
 **现象**：`\left(x\right)` 在 Word 中显示为 `(x)` 而非正确缩放的括号。
 
@@ -267,7 +792,7 @@ case 'semantics':
   return node.children[0] ? mathmlNodeToOmml(node.children[0]) : [];
 ```
 
-### Bug 2：重音符号（\widetilde 等）渲染成上标
+**Bug 2：重音符号（\widetilde 等）渲染成上标**
 
 **现象**：`\widetilde{W}` 在 Word 中显示为 `W~` 而非 $\widetilde{W}$。
 
@@ -275,101 +800,10 @@ case 'semantics':
 
 **修复**：增加 `accent="true"` 判断，走 `buildAccent` 路径。
 
----
-
-## 六、内联公式与显示公式的分段解析
-
-段落文字中混合文本和 `$...$` / `$$...$$`，需要先分段再分别处理：
-
-```js
-function parseMathSegments(text) {
-  const segs = [];
-  let i = 0;
-  while (i < text.length) {
-    // 先检测 $$ (双美元，display math)
-    if (text[i] === '$' && text[i+1] === '$') {
-      const end = text.indexOf('$$', i+2);
-      if (end !== -1) { segs.push({math:true, s:text.slice(i+2,end)}); i=end+2; continue; }
-    }
-    // 再检测 $ (inline math)
-    if (text[i] === '$') {
-      const end = text.indexOf('$', i+1);
-      if (end !== -1) { segs.push({math:true, s:text.slice(i+1,end)}); i=end+1; continue; }
-    }
-    // 普通文本
-    const next$ = text.indexOf('$', i);
-    const chunk = next$ === -1 ? text.slice(i) : text.slice(i, next$);
-    if (chunk) segs.push({math:false, s:chunk});
-    if (next$ === -1) break;
-    i = next$;
-  }
-  return segs;
-}
-```
-
-然后：
-```js
-for (const seg of segs) {
-  if (seg.math) {
-    children.push(new D.Math({ children: latexToOmml(seg.s) }));
-  } else {
-    children.push(new D.TextRun({ text: seg.s, ... }));
-  }
-}
-```
-
----
-
-## 七、样式同步（CSS 变量 ↔ docx 属性）
-
-HTML 预览使用 CSS 变量实时更新，导出时读取同一套值：
-
-```js
-// HTML 侧：CSS 变量
-document.getElementById('document-page').style.setProperty('--body-size', '12pt');
-
-// 导出侧：从 <select> 读取相同值
-const bodySize = ptToHalfPt(document.getElementById('s-bsize').value);  // "12pt" → 24
-const bodyFontName = getDocxFontName(document.getElementById('s-bfont').value);
-// "SimSun,'宋体',serif" → "SimSun"
-```
-
-字体名称对应关系（中文 Word 字体）：
-
-| CSS 名称 | docx 字体名 |
-|---|---|
-| `'Microsoft YaHei'` | `Microsoft YaHei` |
-| `'SimSun'` / `'宋体'` | `SimSun` |
-| `'SimHei'` / `'黑体'` | `SimHei` |
-| `'KaiTi'` / `'楷体'` | `KaiTi` |
-| `'FangSong'` / `'仿宋'` | `FangSong` |
-
----
-
-## 八、PDF 导出（作为补充）
-
-使用 `html2pdf.js`，直接截图 HTML 预览区：
-
-```js
-html2pdf().set({
-  margin: 0,
-  filename: 'report.pdf',
-  image: { type: 'jpeg', quality: 0.97 },
-  html2canvas: { scale: 2, useCORS: true },  // scale:2 保证清晰度
-  jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-}).from(document.getElementById('document-page')).save();
-```
-
-> **优点**：数学公式由 KaTeX 渲染好再截图，字体完全与网页一致。
-> **缺点**：无法矢量化文字，文字层不可选中；中文字体需依赖系统字体。
-
----
-
-## 九、开发调试技巧
+### 5.3 开发调试技巧
 
 1. **在浏览器控制台测试单个 LaTeX**：
    ```js
-   // 检查 KaTeX 是否解析正确
    katex.renderToString('\\widetilde{W}', {output:'mathml', throwOnError:false});
    ```
 
@@ -399,9 +833,7 @@ html2pdf().set({
    - 用 jsdom 提供 DOM API，把完整的 `mathmlNodeToOmml` 逻辑复制进去测试
    - 用 `check(tree)` lambda 断言输出结构
 
----
-
-## 十、可直接复用的最简模板
+### 5.4 可直接复用的最简模板
 
 ```html
 <!DOCTYPE html>
@@ -448,437 +880,3 @@ async function exportDocx() {
 </body>
 </html>
 ```
-
----
-
-## 附录：MathML → OMML 完整覆盖情况
-
-| LaTeX 类别 | KaTeX MathML 标签 | OMML 处理 | 状态 |
-|---|---|---|---|
-| 分数 `\frac` | `<mfrac>` | `MathFraction` | ✅ |
-| 平方根 `\sqrt` | `<msqrt>` | `MathRadical` | ✅ |
-| n次根 `\sqrt[n]` | `<mroot>` | `MathRadical` with degree | ✅ |
-| 下标 `_` | `<msub>` | `MathSubScript` | ✅ |
-| 上标 `^` | `<msup>` | `MathSuperScript` | ✅ |
-| 上下标 `_^` | `<msubsup>` | `MathSubSuperScript` | ✅ |
-| 重音 `\hat\bar\vec` 等 | `<mover accent="true">` | `m:acc` via XmlComponent | ✅ |
-| 极限上标 `\overset` | `<mover accent≠true>` | `MathSuperScript`（降级）| ⚠️ |
-| 极限下标 `\underset` | `<munder>` | `MathSubScript`（降级）| ⚠️ |
-| 定积分上下限 `\munderover` | `<munderover>` | `MathSubSuperScript` | ✅ |
-| `\left...\right` 定界符 | `<mrow>` with fence mo | `m:d` via XmlComponent | ✅ |
-| `\middle` | fence mo 中间节点 | 多段 `m:d` | ✅ |
-| 矩阵 `pmatrix/bmatrix` | `<mrow>+<mtable>` (多列) | `m:m` via XmlComponent（在 tryFencedMrow 检测）| ✅ |
-| cases 环境 | `<mrow fence={>+<mtable>` (单列) | `m:eqArr` via XmlComponent（换行分行）| ✅ |
-| align/aligned 环境 | 独立 `<mtable>` | `m:eqArr`（多列单元格合并后换行）| ✅ |
-| 文本 `\text{}` | `<mtext>` | `MathRun` | ✅ |
-| 空白 `\;` 等 | `<mspace>` | `MathRun('\u00a0')` | ✅ |
-| 希腊字母 | `<mi>` | `MathRun`（直接 Unicode）| ✅ |
-| 运算符 `+−×÷` 等 | `<mo>` | `MathRun` | ✅ |
-
-> ⚠️ = 功能性降级，输出可读但非完美排版。
-> Word 的 OMML `<m:m>` 矩阵与 `<m:eqArr>` 方程数组已完整实现（见第十一节）。
-
----
-
-## 十一、多行公式自动分行（m:eqArr / m:m）
-
-### 11.1 问题背景
-
-LaTeX 的 `\begin{cases}` / `\begin{aligned}` / `\begin{align}` 等多行环境，
-KaTeX 将其渲染为 `<mtable>` 结构（MathML 表格）。  
-若直接把各行用分号拼成一行，则 Word 导出后公式失去换行结构，排版混乱。
-
-### 11.2 OMML 多行元素
-
-| OMML 元素 | 用途 | 对应 LaTeX 环境 |
-|---|---|---|
-| `<m:eqArr>` | 方程数组（每行独立换行） | `cases`, `aligned`, `align`, `gather` |
-| `<m:m>` | 矩阵（行+列） | `pmatrix`, `bmatrix`, `vmatrix`, etc. |
-
-**eqArr 结构**：
-```xml
-<m:eqArr>
-  <m:e><!-- 第1行内容 --></m:e>
-  <m:e><!-- 第2行内容 --></m:e>
-  <m:e><!-- 第3行内容 --></m:e>
-</m:eqArr>
-```
-
-**matrix 结构**：
-```xml
-<m:m>
-  <m:mr>
-    <m:e><!-- cell(0,0) --></m:e>
-    <m:e><!-- cell(0,1) --></m:e>
-  </m:mr>
-  <m:mr>
-    <m:e><!-- cell(1,0) --></m:e>
-    <m:e><!-- cell(1,1) --></m:e>
-  </m:mr>
-</m:m>
-```
-
-### 11.3 构建函数
-
-```js
-/** 方程数组：rowContents[i] = 第i行的 OMML 元素数组 */
-function buildEqArr(rowContents) {
-  const eqArr = new D.XmlComponent('m:eqArr');
-  for (const rowContent of rowContents) {
-    const e = new D.XmlComponent('m:e');
-    e.root.push(...rowContent);
-    eqArr.root.push(e);
-  }
-  return eqArr;
-}
-
-/** 矩阵：rows2d[i][j] = 第i行第j列的 OMML 元素数组 */
-function buildMatrix(rows2d) {
-  const m = new D.XmlComponent('m:m');
-  for (const cells of rows2d) {
-    const mr = new D.XmlComponent('m:mr');
-    for (const cell of cells) {
-      const e = new D.XmlComponent('m:e');
-      e.root.push(...cell);
-      mr.root.push(e);
-    }
-    m.root.push(mr);
-  }
-  return m;
-}
-```
-
-### 11.4 分发逻辑
-
-**情形1：`<mtable>` 在 fence mrow 内（由 `tryFencedMrow` 处理）**
-
-```js
-// tryFencedMrow 中，middleFences.length === 0 分支：
-const innerEls = innerNodes.filter(n => n.nodeType === Node.ELEMENT_NODE);
-if (innerEls.length === 1 && innerTag === 'mtable') {
-  const rows2d = /* 将 mtd 内容转为 OMML 二维数组 */;
-  const maxCols = Math.max(...rows2d.map(r => r.length));
-  const isMatrixFence = '(['.includes(begChar) && '(['.includes(endChar);
-
-  if (maxCols > 1 && isMatrixFence) {
-    // pmatrix / bmatrix 等多列矩阵
-    return mkDelimiter(begChar, null, endChar, [[buildMatrix(rows2d)]]);
-  } else {
-    // cases（单列，begChar='{'）或其他单列有界环境
-    const rowContents = rows2d.map(r => r.flat());
-    return mkDelimiter(begChar, null, endChar, [[buildEqArr(rowContents)]]);
-  }
-}
-```
-
-**情形2：独立 `<mtable>`（`mathmlNodeToOmml` 的 `mtable` case）**
-
-```js
-case 'mtable': {
-  // align / aligned / gather / array 等无 fence 的多行环境
-  const rows2d = Array.from(node.children).map(mtr =>
-    Array.from(mtr.children).map(mtd => {
-      const out = [];
-      for (const c of mtd.childNodes) out.push(...mathmlNodeToOmml(c));
-      return out;
-    })
-  );
-  if (rows2d.length === 0) return [];
-  // 多列 align 的左右对齐列合并为一行（x &= y → [x,=,y]）
-  const rowContents = rows2d.map(r => r.flat());
-  return [buildEqArr(rowContents)];
-}
-```
-
-### 11.5 cases 示例（端到端）
-
-LaTeX：`\begin{cases} q^* = \varphi(q^*) \\ Aq^* = 0 \end{cases}`
-
-KaTeX MathML（简化）：
-```xml
-<mrow>
-  <mo fence="true">{</mo>
-  <mtable>
-    <mtr><mtd><mrow>q* = φ(q*)</mrow></mtd></mtr>
-    <mtr><mtd><mrow>Aq* = 0</mrow></mtd></mtr>
-  </mtable>
-  <mo fence="true"></mo>   <!-- 空字符结尾 = 无右括号 -->
-</mrow>
-```
-
-处理流程：
-1. `mathmlNodeToOmml(mrow)` → `tryFencedMrow`  
-2. begChar=`{`，endChar=`""`（空），无中间 fence  
-3. innerEls=[mtable]，单列 → `buildEqArr` + `mkDelimiter('{', null, '', [...])`  
-4. OMML：`<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/></m:dPr><m:e><m:eqArr>...</m:eqArr></m:e></m:d>`  
-
-Word 最终效果：
-```
-⎧ q* = φ(q*)
-⎨
-⎩ Aq* = 0
-```
-
-### 11.6 注意事项
-
-- `endChar = ""` 对应 OMML `<m:endChr m:val=""/>` → Word 显示无右括号（cases 正确行为）
-- OMML 默认 `m:sepChr` 是 `|`，但单段 `<m:e>` 时 sepChr 无实际渲染影响
-- `\\[4pt]` 等行间距修饰：KaTeX 生成 `mspace` 节点，被已有 `mspace` → `\u00a0` 处理；行间距微调在 OMML 中可通过 `<m:eqArrPr>` 的 `<m:lineSp>` 实现（当前版本未实现）
-- 嵌套多行（如 `\begin{cases}` 内含 `\begin{aligned}`）：递归调用 `mathmlNodeToOmml` 自然处理
-
----
-
-## 十二、图片（Image）内容块支持
-
-### 12.1 CONTENT 数据结构
-
-```js
-{
-  type: 'img',
-  src: 'data:image/jpeg;base64,/9j/4AAQ…',  // base64 data URL（JPEG / PNG）
-  caption: '图1. 仿真轨迹示意图。',           // 可选图注
-  widthPt: 440,    // 展示宽度（pt），用于 HTML max-width 和 docx ImageRun
-  heightPt: 329,   // 对应高度（pt），保持纵横比
-}
-```
-
-> `src` 推荐使用 `data:image/jpeg;base64,…` 格式，完全内嵌在 HTML 文件中，无需外部依赖。
-> 使用 Python `base64.b64encode(raw).decode()` 生成，再拼接前缀即可。
-
-### 12.2 HTML 渲染（renderContent）
-
-```js
-case 'img': {
-  const cap  = item.caption ? `<figcaption>${esc(item.caption)}</figcaption>` : '';
-  const style = item.widthPt ? ` style="max-width:${item.widthPt}pt"` : '';
-  html += `<figure class="df-figure">
-    <img src="${item.src}"${style} alt="${escAttr(item.caption || '')}">
-    ${cap}
-  </figure>`;
-  break;
-}
-```
-
-**CSS 样式**：
-
-```css
-.df-figure {
-  display: block; margin: 14pt auto; text-align: center;
-}
-.df-figure img {
-  max-width: 100%; height: auto; display: block; margin: 0 auto;
-}
-.df-figure figcaption {
-  font-family: var(--body-font); font-size: var(--body-size);
-  line-height: var(--body-lh); color: #333;
-  margin-top: 5pt; text-align: center;
-}
-```
-
-### 12.3 DOCX 导出（exportToDocx）
-
-```js
-/** image src（data URL / base64 / http(s) URL）→ Uint8Array */
-async function b64ToUint8(src) {
-  if (!src) return null;
-  const isDataUrl = src.startsWith('data:');
-  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//');
-  if (isDataUrl || !isUrl) {
-    const b64 = src.includes(',') ? src.split(',')[1] : src;
-    const bin = atob(b64);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    return arr;
-  }
-  const response = await fetch(src);
-  if (!response.ok) throw new Error(`Image fetch failed for ${src}: ${response.status}`);
-  const buf = await response.arrayBuffer();
-  return new Uint8Array(buf);
-}
-
-/**
- * Build [imgParagraph, captionParagraph] for an image src.
- * widthPt / heightPt are in pt (docx.js ImageRun uses pt natively via transformation).
- */
-async function buildImagePara(src, widthPt, heightPt, caption) {
-  const imageRun = new D.ImageRun({
-    data: await b64ToUint8(src),
-    transformation: { width: widthPt, height: heightPt }
-  });
-  const imgPara = new D.Paragraph({
-    children: [imageRun],
-    alignment: D.AlignmentType.CENTER,
-    spacing: { before: 120, after: caption ? 60 : 180 }
-  });
-  if (!caption) return [imgPara];
-  const capPara = new D.Paragraph({
-    children: [new D.TextRun({ text: caption, font: bodyFontName, size: bodySize, italics: true })],
-    alignment: D.AlignmentType.CENTER,
-    spacing: { after: 180 }
-  });
-  return [imgPara, capPara];
-}
-```
-
-在 `switch(item.type)` 中：
-
-```js
-case 'img': {
-  const wPt = item.widthPt || 400;
-  const hPt = item.heightPt || Math.round(wPt * 0.75);
-  docChildren.push(...await buildImagePara(item.src, wPt, hPt, item.caption || ''));
-  break;
-}
-```
-
-> **docx.js 版本注意**：`ImageRun` 的 `transformation` 属性在 docx.js 7.x 和 8.x 中均支持 pt 单位（内部自动转换为 EMU：1pt = 12700 EMU）。
-> 如需 EMU 单位，手动换算：`widthEMU = widthPt * 12700`。
-
-### 12.4 如何从 PDF 提取仿真图片（Python）
-
-```python
-import fitz   # pip install pymupdf
-import base64
-from PIL import Image
-from io import BytesIO
-
-def extract_and_encode(pdf_path, page_idx, clip_rect, scale=2.2, quality=85):
-    """提取 PDF 特定页面的裁切区域，返回 base64 JPEG 字符串和尺寸。"""
-    doc = fitz.open(pdf_path)
-    page = doc[page_idx]
-    clip = fitz.Rect(*clip_rect)       # (x0, y0, x1, y1) in points
-    mat  = fitz.Matrix(scale, scale)   # 放大倍率
-    pix  = page.get_pixmap(matrix=mat, clip=clip)
-
-    img = Image.open(BytesIO(pix.tobytes('png'))).convert('RGB')
-    if img.width > 1200:               # 限制最大宽度节省体积
-        h = round(img.height * 1200 / img.width)
-        img = img.resize((1200, h), Image.LANCZOS)
-
-    buf = BytesIO()
-    img.save(buf, 'JPEG', quality=quality)
-    b64 = base64.b64encode(buf.getvalue()).decode()
-    return f'data:image/jpeg;base64,{b64}', img.size
-
-# 示例：提取论文第5页（索引4）上半部分的仿真轨迹图
-src, (w, h) = extract_and_encode(
-    'paper.pdf', page_idx=4,
-    clip_rect=(0, 10, 612, 468),       # PDF坐标（pt），A4宽612pt
-    scale=2.2, quality=85
-)
-# 说明：clip_rect 使用 PDF 点坐标（1pt = 1/72 inch）。
-# 可先用 page.rect 获取页面尺寸，再在 PDF 查看器中测量目标区域，
-# 或先导出整页图像后在图像编辑器中读出像素范围，再按比例换算为 pt。
-# 目标宽度440pt，等比例高度
-target_w = 440
-target_h = round(target_w * h / w)
-entry = f"{{type:'img',src:'{src}',caption:'图1. ...',widthPt:{target_w},heightPt:{target_h}}}"
-```
-
-### 12.5 从 DOCX 提取图片（Python）
-
-```python
-import zipfile, base64
-from PIL import Image
-from io import BytesIO
-
-def extract_from_docx(docx_path, max_w=1100, quality=82):
-    """从 .docx 文件中提取所有嵌入图片，返回 [(data_url, (w, h)), ...] 列表。"""
-    results = []
-    with zipfile.ZipFile(docx_path) as z:
-        media = sorted(n for n in z.namelist() if n.startswith('word/media/'))
-        for name in media:
-            raw = z.read(name)
-            img = Image.open(BytesIO(raw)).convert('RGB')
-            if img.width > max_w:
-                h = round(img.height * max_w / img.width)
-                img = img.resize((max_w, h), Image.LANCZOS)
-            buf = BytesIO()
-            img.save(buf, 'JPEG', quality=quality)
-            b64 = base64.b64encode(buf.getvalue()).decode()
-            results.append((f'data:image/jpeg;base64,{b64}', img.size))
-    return results
-```
-
----
-
-## 十三、分页、页眉与页码（Word + PDF）
-
-### 13.1 功能目标
-
-- PDF 按 Word 导出逻辑分页（包含显式章节分页点，如“参考文献”前换页）
-- 页码支持 Word/PDF 同步配置：
-  - 位置：不显示 / 页眉右侧 / 页眉居中 / 页脚居中 / 页脚右侧
-  - 格式：`n`、`第 n 页`、`n / N`、`第 n 页 / 共 N 页`
-- 页眉支持自定义输入，并在所有页面统一生效（HTML 预览仅展示第一页样式）
-
-### 13.2 UI 配置建议
-
-```html
-<input id="s-header-text">
-<select id="s-page-num-position">...</select>
-<select id="s-page-num-format">...</select>
-```
-
-对应配置读取：
-
-```js
-function getPageDecorSettings() {
-  return {
-    headerText: ...,
-    pageNumPosition: ...,
-    pageNumFormat: ...
-  };
-}
-```
-
-### 13.3 Word（docx.js）实现要点
-
-- `headers.default` 始终写入自定义页眉文本
-- 页码在 `headers` 或 `footers` 中根据位置插入
-- 使用 `docx.PageNumber.CURRENT` / `docx.PageNumber.TOTAL_PAGES` 组合页码文本
-
-示意：
-
-```js
-new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNumber.TOTAL_PAGES, ' 页'] })
-```
-
-### 13.4 PDF 分页实现要点
-
-- 不直接导出整页长 DOM；改为构建临时 `.pdf-export-root`
-- 每个 `.pdf-export-page` 固定 A4 高度（297mm），内容区逐块填充
-- 超高即新建下一页；遇到 Word 显式分页点（如"参考文献"）强制换页
-- 生成完总页数后，回填每页页码文本，再调用 `html2pdf`
-
-### 13.5 空白页问题排查与规范
-
-PDF 导出中出现多余空白页有两类来源，需分别处理：
-
-#### A. 每页后都有空白页（双重断页）
-
-原因：`.pdf-export-page` 设置了 `page-break-after: always`，同时 html2pdf 选项 `pagebreak: { mode: ['css', 'legacy'] }` 会扫描该属性并调用 `jsPDF.addPage()`，与自然按高度切页叠加，导致每页内容后插入一张空白页。
-
-**修复方法**：禁用 html2pdf 的 CSS 断页扫描：
-```js
-pagebreak: { mode: [] }
-```
-此时每个 297mm 高度的 div 自然对应一页，无需额外断页指令。
-
-#### B. 最后一页多一张空白页（像素取整溢出）
-
-原因：CSS `height: 297mm` 在浏览器中转为像素时向上取整（297/25.4×96 = 1122.52 → 1123px），而 html2pdf 内部按 `Math.floor(canvasWidth × 297/210)` 计算每页像素高度。两者不完全整除时，`Math.ceil(totalHeight / pageHeight)` 会多出 1 页空白。
-
-**修复方法**：将 `html2canvas.height` 设为与 html2pdf 内部 `pxPageHeight` 一致的整数倍：
-```js
-html2canvas: {
-  width:  container.offsetWidth  || 794,
-  height: Math.floor((container.offsetWidth || 794) * 297 / 210) * pages.length
-}
-```
-这样 `canvas.height / pxPageHeight = pages.length`，整除无余，不生成额外页。
-
-### 13.6 兼容性建议
-
-- `TOTAL_PAGES` 不可用时，自动降级为仅显示当前页码
-- 对公式块、图块设置 `break-inside: avoid`，减少跨页切断
