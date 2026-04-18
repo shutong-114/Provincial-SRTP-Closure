@@ -1883,7 +1883,7 @@ async function exportToPDF() {
         scrollX: 0,
         scrollY: 0,
         width:  container.offsetWidth  || 794,
-        height: container.offsetHeight || 1123
+        height: Math.floor((container.offsetWidth || 794) * 297 / 210) * pages.length
       },
       pagebreak: { mode: [] },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }

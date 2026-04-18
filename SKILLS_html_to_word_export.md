@@ -848,10 +848,37 @@ new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNu
 
 - 不直接导出整页长 DOM；改为构建临时 `.pdf-export-root`
 - 每个 `.pdf-export-page` 固定 A4 高度（297mm），内容区逐块填充
-- 超高即新建下一页；遇到 Word 显式分页点（如“参考文献”）强制换页
+- 超高即新建下一页；遇到 Word 显式分页点（如"参考文献"）强制换页
 - 生成完总页数后，回填每页页码文本，再调用 `html2pdf`
 
-### 13.5 兼容性建议
+### 13.5 空白页问题排查与规范
+
+PDF 导出中出现多余空白页有两类来源，需分别处理：
+
+#### A. 每页后都有空白页（双重断页）
+
+原因：`.pdf-export-page` 设置了 `page-break-after: always`，同时 html2pdf 选项 `pagebreak: { mode: ['css', 'legacy'] }` 会扫描该属性并调用 `jsPDF.addPage()`，与自然按高度切页叠加，导致每页内容后插入一张空白页。
+
+**修复方法**：禁用 html2pdf 的 CSS 断页扫描：
+```js
+pagebreak: { mode: [] }
+```
+此时每个 297mm 高度的 div 自然对应一页，无需额外断页指令。
+
+#### B. 最后一页多一张空白页（像素取整溢出）
+
+原因：CSS `height: 297mm` 在浏览器中转为像素时向上取整（297/25.4×96 = 1122.52 → 1123px），而 html2pdf 内部按 `Math.floor(canvasWidth × 297/210)` 计算每页像素高度。两者不完全整除时，`Math.ceil(totalHeight / pageHeight)` 会多出 1 页空白。
+
+**修复方法**：将 `html2canvas.height` 设为与 html2pdf 内部 `pxPageHeight` 一致的整数倍：
+```js
+html2canvas: {
+  width:  container.offsetWidth  || 794,
+  height: Math.floor((container.offsetWidth || 794) * 297 / 210) * pages.length
+}
+```
+这样 `canvas.height / pxPageHeight = pages.length`，整除无余，不生成额外页。
+
+### 13.6 兼容性建议
 
 - `TOTAL_PAGES` 不可用时，自动降级为仅显示当前页码
 - 对公式块、图块设置 `break-inside: avoid`，减少跨页切断
