@@ -43,7 +43,12 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:4px;
   font-size:12px;color:#333;margin-bottom:7px;background:#fafafa;
 }
+.sb-input{
+  width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:4px;
+  font-size:12px;color:#333;margin-bottom:7px;background:#fafafa;
+}
 .sb-select:focus{outline:none;border-color:#1a3a6b}
+.sb-input:focus{outline:none;border-color:#1a3a6b}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .grid2 .sb-select{margin-bottom:0}
 
@@ -106,6 +111,29 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
   display:flex;justify-content:space-between;align-items:center;
   padding-bottom:4pt;border-bottom:.5pt solid #bbb;margin-bottom:18pt;
+}
+
+/* PDF export pages */
+.pdf-export-root{width:210mm}
+.pdf-export-page{
+  width:210mm;height:297mm;
+  padding:2cm 2cm 2cm 2.5cm;
+  background:#fff;box-sizing:border-box;
+  display:flex;flex-direction:column;
+  page-break-after:always;break-after:page;
+}
+.pdf-export-page:last-child{page-break-after:auto;break-after:auto}
+.pdf-page-header{
+  font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
+  display:flex;justify-content:space-between;align-items:center;
+  padding-bottom:4pt;border-bottom:.5pt solid #bbb;margin-bottom:18pt;
+  min-height:16pt;
+}
+.pdf-page-content{flex:1;overflow:hidden}
+.pdf-page-footer{
+  font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
+  border-top:.5pt solid #bbb;margin-top:12pt;padding-top:4pt;
+  min-height:16pt;
 }
 
 /* Content area inheriting vars */
@@ -342,6 +370,28 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
     </div>
 
     <!-- Download -->
+    <div class="sb-section">
+      <div class="sb-title">📄 页眉与页码</div>
+      <div class="sb-label">页眉文本（每页相同）</div>
+      <input class="sb-input" id="s-header-text" value="东南大学本科生创新训练计划项目" oninput="applyPageDecorSettings()">
+      <div class="sb-label">页码位置（Word/PDF）</div>
+      <select class="sb-select" id="s-page-num-position" onchange="applyPageDecorSettings()">
+        <option value="none">不显示</option>
+        <option value="header-right" selected>页眉右侧</option>
+        <option value="header-center">页眉居中</option>
+        <option value="footer-center">页脚居中</option>
+        <option value="footer-right">页脚右侧</option>
+      </select>
+      <div class="sb-label">页码格式（Word/PDF）</div>
+      <select class="sb-select" id="s-page-num-format" onchange="applyPageDecorSettings()">
+        <option value="cn">第 n 页</option>
+        <option value="n">n</option>
+        <option value="nN">n / N</option>
+        <option value="cnN" selected>第 n 页 / 共 N 页</option>
+      </select>
+    </div>
+
+    <!-- Download -->
     <div class="dl-area">
       <button class="btn btn-docx" onclick="exportToDocx()">⬇ 下载 DOCX（含Word公式）</button>
       <button class="btn btn-pdf" onclick="exportToPDF()">⬇ 下载 PDF</button>
@@ -352,7 +402,7 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   <main id="main">
     <div id="document-page">
       <div class="pg-header">
-        <span>东南大学本科生创新训练计划项目</span>
+        <span id="pg-header-text">东南大学本科生创新训练计划项目</span>
         <span id="pg-num">第 1 页</span>
       </div>
       <div id="doc-content">
@@ -799,6 +849,40 @@ function applyStyles() {
   set('--h2-align',   document.getElementById('s-h2align').value);
   set('--h3-size',    document.getElementById('s-h3size').value);
   set('--h3-align',   document.getElementById('s-h3align').value);
+  applyPageDecorSettings();
+}
+
+function getPageDecorSettings() {
+  return {
+    headerText: (document.getElementById('s-header-text')?.value || '').trim() || '东南大学本科生创新训练计划项目',
+    pageNumPosition: document.getElementById('s-page-num-position')?.value || 'header-right',
+    pageNumFormat: document.getElementById('s-page-num-format')?.value || 'cnN'
+  };
+}
+
+function formatPageLabel(page, total, fmt) {
+  switch (fmt) {
+    case 'n': return `${page}`;
+    case 'nN': return `${page} / ${total}`;
+    case 'cn': return `第 ${page} 页`;
+    case 'cnN':
+    default: return `第 ${page} 页 / 共 ${total} 页`;
+  }
+}
+
+function applyPageDecorSettings() {
+  const cfg = getPageDecorSettings();
+  const h = document.getElementById('pg-header-text');
+  const n = document.getElementById('pg-num');
+  if (h) h.textContent = cfg.headerText;
+  if (!n) return;
+  if (cfg.pageNumPosition === 'none') {
+    n.style.visibility = 'hidden';
+    n.textContent = '';
+    return;
+  }
+  n.style.visibility = 'visible';
+  n.textContent = formatPageLabel(1, 1, cfg.pageNumFormat);
 }
 
 function loadTemplate(el) {
@@ -1480,6 +1564,41 @@ async function exportToDocx() {
       }
     }
 
+    const pageDecor = getPageDecorSettings();
+    const hasTotalPage = !!(D.PageNumber && D.PageNumber.TOTAL_PAGES);
+    function docxPageRuns() {
+      if (!(D.PageNumber && D.PageNumber.CURRENT)) return [new D.TextRun({ text: '1', font: bodyFontName, size: 18 })];
+      switch (pageDecor.pageNumFormat) {
+        case 'n':
+          return [new D.TextRun({ children: [D.PageNumber.CURRENT], font: bodyFontName, size: 18 })];
+        case 'nN':
+          return hasTotalPage
+            ? [new D.TextRun({ children: [D.PageNumber.CURRENT, ' / ', D.PageNumber.TOTAL_PAGES], font: bodyFontName, size: 18 })]
+            : [new D.TextRun({ children: [D.PageNumber.CURRENT], font: bodyFontName, size: 18 })];
+        case 'cn':
+          return [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页'], font: bodyFontName, size: 18 })];
+        case 'cnN':
+        default:
+          return hasTotalPage
+            ? [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNumber.TOTAL_PAGES, ' 页'], font: bodyFontName, size: 18 })]
+            : [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页'], font: bodyFontName, size: 18 })];
+      }
+    }
+    const pageNumAlign = pageDecor.pageNumPosition.endsWith('center') ? D.AlignmentType.CENTER : D.AlignmentType.RIGHT;
+    const pageNumPara = new D.Paragraph({ children: docxPageRuns(), alignment: pageNumAlign });
+    const headerChildren = [new D.Paragraph({
+      children: [new D.TextRun({ text: pageDecor.headerText, font: bodyFontName, size: 18 })],
+      alignment: D.AlignmentType.CENTER,
+      border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 1 } }
+    })];
+    if (pageDecor.pageNumPosition.startsWith('header-')) headerChildren.push(pageNumPara);
+    const headers = {
+      default: new D.Header({ children: headerChildren })
+    };
+    const footers = pageDecor.pageNumPosition.startsWith('footer-')
+      ? { default: new D.Footer({ children: [pageNumPara] }) }
+      : undefined;
+
     // ── build Document ──
     const doc = new D.Document({
       styles: {
@@ -1497,15 +1616,8 @@ async function exportToDocx() {
             }
           }
         },
-        headers: {
-          default: new D.Header({
-            children: [new D.Paragraph({
-              children: [new D.TextRun({ text: '东南大学本科生创新训练计划项目', font: bodyFontName, size: 18 })],
-              alignment: D.AlignmentType.CENTER,
-              border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 1 } }
-            })]
-          })
-        },
+        headers,
+        ...(footers ? { footers } : {}),
         children: docChildren
       }]
     });
@@ -1580,18 +1692,108 @@ async function exportToPDF() {
   try { await waitPdf; }
   catch(e) { notify('❌ '+e.message, 6000); return; }
 
-  const el = document.getElementById('document-page');
+  const pageDecor = getPageDecorSettings();
+  const sourcePage = document.getElementById('document-page');
+  const sourceContent = document.getElementById('doc-content');
+  const root = document.createElement('div');
+  root.className = 'pdf-export-root';
+
+  function makePdfPage() {
+    const page = document.createElement('div');
+    page.className = 'pdf-export-page';
+    const header = document.createElement('div');
+    header.className = 'pdf-page-header';
+    const left = document.createElement('span');
+    left.textContent = pageDecor.headerText;
+    const right = document.createElement('span');
+    header.appendChild(left);
+    header.appendChild(right);
+    const content = document.createElement('div');
+    content.className = 'pdf-page-content';
+    const footer = document.createElement('div');
+    footer.className = 'pdf-page-footer';
+    const footerPage = document.createElement('span');
+    footer.appendChild(footerPage);
+    page.appendChild(header);
+    page.appendChild(content);
+    page.appendChild(footer);
+    root.appendChild(page);
+    return { page, header, right, content, footer, footerPage };
+  }
+
+  let current = makePdfPage();
+  const blocks = Array.from(sourceContent.children);
+  for (const block of blocks) {
+    const clone = block.cloneNode(true);
+    if (clone.classList && clone.classList.contains('dh1') && clone.textContent.trim() === '参考文献' && current.content.children.length > 0) {
+      current = makePdfPage();
+    }
+    current.content.appendChild(clone);
+    if (current.content.scrollHeight > current.content.clientHeight + 1) {
+      current.content.removeChild(clone);
+      current = makePdfPage();
+      current.content.appendChild(clone);
+    }
+  }
+
+  const pages = Array.from(root.querySelectorAll('.pdf-export-page'));
+  const total = pages.length || 1;
+  pages.forEach((p, i) => {
+    const idx = i + 1;
+    const headerRight = p.querySelector('.pdf-page-header span:last-child');
+    const footerSpan = p.querySelector('.pdf-page-footer span');
+    const label = formatPageLabel(idx, total, pageDecor.pageNumFormat);
+    headerRight.textContent = '';
+    footerSpan.textContent = '';
+    headerRight.style.display = 'none';
+    footerSpan.style.display = 'none';
+    p.querySelector('.pdf-page-header').style.justifyContent = 'space-between';
+    p.querySelector('.pdf-page-footer').style.textAlign = 'right';
+    p.querySelector('.pdf-page-header span:first-child').style.display = '';
+    if (pageDecor.pageNumPosition === 'header-right') {
+      headerRight.style.display = '';
+      headerRight.textContent = label;
+    } else if (pageDecor.pageNumPosition === 'header-center') {
+      headerRight.style.display = '';
+      p.querySelector('.pdf-page-header').style.justifyContent = 'center';
+      headerRight.textContent = label;
+      p.querySelector('.pdf-page-header span:first-child').style.display = 'none';
+    } else if (pageDecor.pageNumPosition === 'footer-center') {
+      footerSpan.style.display = '';
+      p.querySelector('.pdf-page-footer').style.textAlign = 'center';
+      footerSpan.textContent = label;
+    } else if (pageDecor.pageNumPosition === 'footer-right') {
+      footerSpan.style.display = '';
+      footerSpan.textContent = label;
+    }
+  });
+
+  root.querySelectorAll('.pdf-page-content .df-wrap, .pdf-page-content .df-figure').forEach(el => {
+    el.style.breakInside = 'avoid';
+    el.style.pageBreakInside = 'avoid';
+  });
+  sourcePage.parentElement.appendChild(root);
+  root.style.position = 'fixed';
+  root.style.left = '-99999px';
+  root.style.top = '0';
+
   const opt = {
     margin: 0,
     filename: '结项报告.pdf',
     image: { type:'jpeg', quality:0.97 },
     html2canvas: { scale:2, useCORS:true, letterRendering:true },
+    pagebreak: { mode:['css','legacy'] },
     jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
   };
 
-  html2pdf().set(opt).from(el).save()
-    .then(()=>notify('✅ PDF 下载成功！', 3000))
-    .catch(e=>notify('❌ PDF 生成失败：'+e.message, 5000));
+  try {
+    await html2pdf().set(opt).from(root).save();
+    notify('✅ PDF 下载成功！', 3000);
+  } catch (e) {
+    notify('❌ PDF 生成失败：'+e.message, 5000);
+  } finally {
+    root.remove();
+  }
 }
 
 /* ============================================================

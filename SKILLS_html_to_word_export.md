@@ -799,3 +799,59 @@ def extract_from_docx(docx_path, max_w=1100, quality=82):
             results.append((f'data:image/jpeg;base64,{b64}', img.size))
     return results
 ```
+
+---
+
+## 十三、分页、页眉与页码（Word + PDF）
+
+### 13.1 功能目标
+
+- PDF 按 Word 导出逻辑分页（包含显式章节分页点，如“参考文献”前换页）
+- 页码支持 Word/PDF 同步配置：
+  - 位置：不显示 / 页眉右侧 / 页眉居中 / 页脚居中 / 页脚右侧
+  - 格式：`n`、`第 n 页`、`n / N`、`第 n 页 / 共 N 页`
+- 页眉支持自定义输入，并在所有页面统一生效（HTML 预览仅展示第一页样式）
+
+### 13.2 UI 配置建议
+
+```html
+<input id="s-header-text">
+<select id="s-page-num-position">...</select>
+<select id="s-page-num-format">...</select>
+```
+
+对应配置读取：
+
+```js
+function getPageDecorSettings() {
+  return {
+    headerText: ...,
+    pageNumPosition: ...,
+    pageNumFormat: ...
+  };
+}
+```
+
+### 13.3 Word（docx.js）实现要点
+
+- `headers.default` 始终写入自定义页眉文本
+- 页码在 `headers` 或 `footers` 中根据位置插入
+- 使用 `docx.PageNumber.CURRENT` / `docx.PageNumber.TOTAL_PAGES` 组合页码文本
+
+示意：
+
+```js
+new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNumber.TOTAL_PAGES, ' 页'] })
+```
+
+### 13.4 PDF 分页实现要点
+
+- 不直接导出整页长 DOM；改为构建临时 `.pdf-export-root`
+- 每个 `.pdf-export-page` 固定 A4 高度（297mm），内容区逐块填充
+- 超高即新建下一页；遇到 Word 显式分页点（如“参考文献”）强制换页
+- 生成完总页数后，回填每页页码文本，再调用 `html2pdf`
+
+### 13.5 兼容性建议
+
+- `TOTAL_PAGES` 不可用时，自动降级为仅显示当前页码
+- 对公式块、图块设置 `break-inside: avoid`，减少跨页切断
