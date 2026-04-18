@@ -101,12 +101,16 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
   --h3-align:left;
 }
 
-/* Page header */
+/* Page header (preview) */
 .pg-header{
   font-family:'SimSun','宋体',serif;font-size:9pt;color:#777;
   display:flex;justify-content:space-between;align-items:center;
   padding-bottom:4pt;border-bottom:.5pt solid #bbb;margin-bottom:18pt;
 }
+.pg-header span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pg-header span:first-child{text-align:left}
+.pg-header span:nth-child(2){text-align:center}
+.pg-header span:last-child{text-align:right}
 
 /* Content area inheriting vars */
 #doc-content{
@@ -353,6 +357,7 @@ html,body{height:100%;overflow:hidden;font-family:'Microsoft YaHei',sans-serif;b
     <div id="document-page">
       <div class="pg-header">
         <span>东南大学本科生创新训练计划项目</span>
+        <span></span>
         <span id="pg-num">第 1 页</span>
       </div>
       <div id="doc-content">
