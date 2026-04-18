@@ -1774,14 +1774,26 @@ async function exportToPDF() {
   });
   sourcePage.parentElement.appendChild(root);
   root.style.position = 'fixed';
-  root.style.left = '-99999px';
+  root.style.left = '0';
   root.style.top = '0';
+  root.style.zIndex = '-1';
+  root.style.pointerEvents = 'none';
+  root.style.background = '#fff';
+  root.style.width = '210mm';
 
   const opt = {
     margin: 0,
     filename: '结项报告.pdf',
     image: { type:'jpeg', quality:0.97 },
-    html2canvas: { scale:2, useCORS:true, letterRendering:true },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      letterRendering: true,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: Math.max(root.scrollWidth, 794),
+      windowHeight: Math.max(root.scrollHeight, 1123)
+    },
     pagebreak: { mode:['css','legacy'] },
     jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
   };
