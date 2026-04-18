@@ -1357,6 +1357,7 @@ async function exportToPDF() {
     filename: '结项报告.pdf',
     image: { type:'jpeg', quality:0.97 },
     html2canvas: { scale:2, useCORS:true, letterRendering:true },
+    pagebreak: { mode: [] },
     jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
   };
 
