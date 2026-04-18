@@ -1695,8 +1695,25 @@ async function exportToPDF() {
   const pageDecor = getPageDecorSettings();
   const sourcePage = document.getElementById('document-page');
   const sourceContent = document.getElementById('doc-content');
+  if (!sourcePage || !sourceContent) {
+    notify('❌ 未找到可导出的页面内容', 5000);
+    return;
+  }
+
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.inset = '0';
+  host.style.zIndex = '2147483647';
+  host.style.background = '#f5f6f8';
+  host.style.padding = '12px 0';
+  host.style.overflow = 'auto';
+
   const root = document.createElement('div');
   root.className = 'pdf-export-root';
+  root.style.margin = '0 auto';
+  root.style.background = '#fff';
+  host.appendChild(root);
+  document.body.appendChild(host);
 
   function makePdfPage() {
     const page = document.createElement('div');
@@ -1721,90 +1738,82 @@ async function exportToPDF() {
     return { page, header, right, content, footer, footerPage };
   }
 
-  let current = makePdfPage();
-  const blocks = Array.from(sourceContent.children);
-  for (const block of blocks) {
-    const clone = block.cloneNode(true);
-    if (clone.classList && clone.classList.contains('dh1') && clone.textContent.trim() === '参考文献' && current.content.children.length > 0) {
-      current = makePdfPage();
-    }
-    current.content.appendChild(clone);
-    if (current.content.scrollHeight > current.content.clientHeight + 1) {
-      current.content.removeChild(clone);
-      current = makePdfPage();
-      current.content.appendChild(clone);
-    }
-  }
-
-  const pages = Array.from(root.querySelectorAll('.pdf-export-page'));
-  const total = pages.length || 1;
-  pages.forEach((p, i) => {
-    const idx = i + 1;
-    const headerRight = p.querySelector('.pdf-page-header span:last-child');
-    const footerSpan = p.querySelector('.pdf-page-footer span');
-    const label = formatPageLabel(idx, total, pageDecor.pageNumFormat);
-    headerRight.textContent = '';
-    footerSpan.textContent = '';
-    headerRight.style.display = 'none';
-    footerSpan.style.display = 'none';
-    p.querySelector('.pdf-page-header').style.justifyContent = 'space-between';
-    p.querySelector('.pdf-page-footer').style.textAlign = 'right';
-    p.querySelector('.pdf-page-header span:first-child').style.display = '';
-    if (pageDecor.pageNumPosition === 'header-right') {
-      headerRight.style.display = '';
-      headerRight.textContent = label;
-    } else if (pageDecor.pageNumPosition === 'header-center') {
-      headerRight.style.display = '';
-      p.querySelector('.pdf-page-header').style.justifyContent = 'center';
-      headerRight.textContent = label;
-      p.querySelector('.pdf-page-header span:first-child').style.display = 'none';
-    } else if (pageDecor.pageNumPosition === 'footer-center') {
-      footerSpan.style.display = '';
-      p.querySelector('.pdf-page-footer').style.textAlign = 'center';
-      footerSpan.textContent = label;
-    } else if (pageDecor.pageNumPosition === 'footer-right') {
-      footerSpan.style.display = '';
-      footerSpan.textContent = label;
-    }
-  });
-
-  root.querySelectorAll('.pdf-page-content .df-wrap, .pdf-page-content .df-figure').forEach(el => {
-    el.style.breakInside = 'avoid';
-    el.style.pageBreakInside = 'avoid';
-  });
-  sourcePage.parentElement.appendChild(root);
-  root.style.position = 'fixed';
-  root.style.left = '0';
-  root.style.top = '0';
-  root.style.zIndex = '-1';
-  root.style.pointerEvents = 'none';
-  root.style.background = '#fff';
-  root.style.width = '210mm';
-
-  const opt = {
-    margin: 0,
-    filename: '结项报告.pdf',
-    image: { type:'jpeg', quality:0.97 },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      letterRendering: true,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: Math.max(root.scrollWidth, 794),
-      windowHeight: Math.max(root.scrollHeight, 1123)
-    },
-    pagebreak: { mode:['css','legacy'] },
-    jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
-  };
-
   try {
+    let current = makePdfPage();
+    const blocks = Array.from(sourceContent.children);
+    for (const block of blocks) {
+      const clone = block.cloneNode(true);
+      if (clone.classList && clone.classList.contains('dh1') && clone.textContent.trim() === '参考文献' && current.content.children.length > 0) {
+        current = makePdfPage();
+      }
+      current.content.appendChild(clone);
+      if (current.content.scrollHeight > current.content.clientHeight + 1) {
+        current.content.removeChild(clone);
+        current = makePdfPage();
+        current.content.appendChild(clone);
+      }
+    }
+
+    const pages = Array.from(root.querySelectorAll('.pdf-export-page'));
+    const total = pages.length || 1;
+    pages.forEach((p, i) => {
+      const idx = i + 1;
+      const headerRight = p.querySelector('.pdf-page-header span:last-child');
+      const footerSpan = p.querySelector('.pdf-page-footer span');
+      const label = formatPageLabel(idx, total, pageDecor.pageNumFormat);
+      headerRight.textContent = '';
+      footerSpan.textContent = '';
+      headerRight.style.display = 'none';
+      footerSpan.style.display = 'none';
+      p.querySelector('.pdf-page-header').style.justifyContent = 'space-between';
+      p.querySelector('.pdf-page-footer').style.textAlign = 'right';
+      p.querySelector('.pdf-page-header span:first-child').style.display = '';
+      if (pageDecor.pageNumPosition === 'header-right') {
+        headerRight.style.display = '';
+        headerRight.textContent = label;
+      } else if (pageDecor.pageNumPosition === 'header-center') {
+        headerRight.style.display = '';
+        p.querySelector('.pdf-page-header').style.justifyContent = 'center';
+        headerRight.textContent = label;
+        p.querySelector('.pdf-page-header span:first-child').style.display = 'none';
+      } else if (pageDecor.pageNumPosition === 'footer-center') {
+        footerSpan.style.display = '';
+        p.querySelector('.pdf-page-footer').style.textAlign = 'center';
+        footerSpan.textContent = label;
+      } else if (pageDecor.pageNumPosition === 'footer-right') {
+        footerSpan.style.display = '';
+        footerSpan.textContent = label;
+      }
+    });
+
+    root.querySelectorAll('.pdf-page-content .df-wrap, .pdf-page-content .df-figure').forEach(el => {
+      el.style.breakInside = 'avoid';
+      el.style.pageBreakInside = 'avoid';
+    });
+
+    const opt = {
+      margin: 0,
+      filename: '结项报告.pdf',
+      image: { type:'jpeg', quality:0.97 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        letterRendering: true,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: Math.max(host.scrollWidth, root.scrollWidth, 794),
+        windowHeight: Math.max(host.scrollHeight, root.scrollHeight, 1123)
+      },
+      pagebreak: { mode:['css','legacy'] },
+      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+    };
+
     await html2pdf().set(opt).from(root).save();
     notify('✅ PDF 下载成功！', 3000);
   } catch (e) {
     notify('❌ PDF 生成失败：'+e.message, 5000);
   } finally {
-    root.remove();
+    host.remove();
   }
 }
 
