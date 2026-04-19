@@ -1733,20 +1733,51 @@ async function exportToDocx() {
             : [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页'], font: bodyFontName, size: 18 })];
       }
     }
-    const pageNumAlign = pageDecor.pageNumPosition.endsWith('center') ? D.AlignmentType.CENTER : D.AlignmentType.RIGHT;
-    const pageNumPara = new D.Paragraph({ children: docxPageRuns(), alignment: pageNumAlign });
-    const headerChildren = [new D.Paragraph({
-      children: [new D.TextRun({ text: pageDecor.headerText, font: bodyFontName, size: 18 })],
-      alignment: D.AlignmentType.CENTER,
-      border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 1 } }
-    })];
-    if (pageDecor.pageNumPosition.startsWith('header-')) headerChildren.push(pageNumPara);
+    // A4 text width = page width (11906 twips) - left margin (1417) - right margin (1134) = 9355 twips
+    // Tab stops allow placing header text and page number on the same line (left / center / right slots)
+    const HDR_TEXT_WIDTH = 9355;
+    const hdrTabStops = [
+      { type: D.TabStopType.CENTER, position: Math.round(HDR_TEXT_WIDTH / 2) },
+      { type: D.TabStopType.RIGHT,  position: HDR_TEXT_WIDTH }
+    ];
+
+    // Distribute header text and page number into left / center / right slots
+    const hdrL = [], hdrC = [], hdrR = [];
+    const pnPos = pageDecor.pageNumPosition;
+    if (pageDecor.headerAlign !== 'none') {
+      const t = new D.TextRun({ text: pageDecor.headerText, font: bodyFontName, size: 18 });
+      if      (pageDecor.headerAlign === 'left')   hdrL.push(t);
+      else if (pageDecor.headerAlign === 'center') hdrC.push(t);
+      else if (pageDecor.headerAlign === 'right')  hdrR.push(t);
+    }
+    if (pnPos === 'header-left')   hdrL.push(...docxPageRuns());
+    else if (pnPos === 'header-center') hdrC.push(...docxPageRuns());
+    else if (pnPos === 'header-right')  hdrR.push(...docxPageRuns());
+
     const headers = {
-      default: new D.Header({ children: headerChildren })
+      default: new D.Header({
+        children: [new D.Paragraph({
+          tabStops: hdrTabStops,
+          children: [
+            ...hdrL,
+            new D.TextRun({ text: '\t' }),
+            ...hdrC,
+            new D.TextRun({ text: '\t' }),
+            ...hdrR,
+          ],
+          border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 1 } }
+        })]
+      })
     };
-    const footers = pageDecor.pageNumPosition.startsWith('footer-')
-      ? { default: new D.Footer({ children: [pageNumPara] }) }
-      : undefined;
+    let footers;
+    if (pnPos.startsWith('footer-')) {
+      const ftrRuns = pnPos === 'footer-left'
+        ? [...docxPageRuns()]
+        : pnPos === 'footer-center'
+          ? [new D.TextRun({ text: '\t' }), ...docxPageRuns()]
+          : [new D.TextRun({ text: '\t' }), new D.TextRun({ text: '\t' }), ...docxPageRuns()];
+      footers = { default: new D.Footer({ children: [new D.Paragraph({ tabStops: hdrTabStops, children: ftrRuns })] }) };
+    }
 
     // ── build Document ──
     const doc = new D.Document({

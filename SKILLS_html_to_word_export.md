@@ -632,37 +632,118 @@ margin: {
 **功能目标**
 
 - 页码支持 Word/PDF 同步配置：
-  - 位置：不显示 / 页眉右侧 / 页眉居中 / 页脚居中 / 页脚右侧
+  - 位置：不显示 / 页眉居左 / 页眉居中 / 页眉居右 / 页脚居左 / 页脚居中 / 页脚居右
   - 格式：`n`、`第 n 页`、`n / N`、`第 n 页 / 共 N 页`
-- 页眉支持自定义输入，并在所有页面统一生效
+- 页眉文本支持自定义内容和左/中/右位置
+- 页眉文本与页码共存于同一行（不同位置），通过 **tab stop** 机制实现
 
 **UI 配置**
 
 ```html
 <input id="s-header-text">
-<select id="s-page-num-position">...</select>
-<select id="s-page-num-format">...</select>
+<select id="s-header-align">   <!-- left / center / right / none -->
+<select id="s-page-num-position">  <!-- none / header-left / header-center / header-right / footer-* -->
+<select id="s-page-num-format">    <!-- n / nN / cn / cnN -->
 ```
 
 ```js
 function getPageDecorSettings() {
   return {
-    headerText: ...,
-    pageNumPosition: ...,
-    pageNumFormat: ...
+    headerText:      document.getElementById('s-header-text').value,
+    headerAlign:     document.getElementById('s-header-align').value,    // 'left'|'center'|'right'|'none'
+    pageNumPosition: document.getElementById('s-page-num-position').value,
+    pageNumFormat:   document.getElementById('s-page-num-format').value
   };
 }
 ```
 
-**docx.js 实现要点**
+**docx.js 实现：用 tab stop 把文本和页码放在同一行**
 
-- `headers.default` 始终写入自定义页眉文本
-- 页码在 `headers` 或 `footers` 中根据位置插入
-- 使用 `docx.PageNumber.CURRENT` / `docx.PageNumber.TOTAL_PAGES` 组合页码文本
+Word 页眉的标准做法是在同一段落里用 tab stop 分隔左/中/右内容。
+不能用两个独立段落——那会造成页眉占两行，且 UI 选择的对齐位置完全无效。
+
+A4 正文宽度（对应 tab stop 端点）：
+```
+正文宽 = 页面宽(11906 twips) - 左边距(1417) - 右边距(1134) = 9355 twips
+```
 
 ```js
-new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNumber.TOTAL_PAGES, ' 页'] })
+const HDR_TEXT_WIDTH = 9355;                      // A4 正文宽（twips）
+const hdrTabStops = [
+  { type: D.TabStopType.CENTER, position: Math.round(HDR_TEXT_WIDTH / 2) },  // 4677 twips
+  { type: D.TabStopType.RIGHT,  position: HDR_TEXT_WIDTH }                    // 9355 twips
+];
+
+// 按位置把页眉文本和页码分别填入三个槽位
+const hdrL = [], hdrC = [], hdrR = [];
+const pnPos = pageDecor.pageNumPosition;
+if (pageDecor.headerAlign !== 'none') {
+  const t = new D.TextRun({ text: pageDecor.headerText, font: bodyFontName, size: 18 });
+  if      (pageDecor.headerAlign === 'left')   hdrL.push(t);
+  else if (pageDecor.headerAlign === 'center') hdrC.push(t);
+  else if (pageDecor.headerAlign === 'right')  hdrR.push(t);
+}
+if (pnPos === 'header-left')        hdrL.push(...docxPageRuns());
+else if (pnPos === 'header-center') hdrC.push(...docxPageRuns());
+else if (pnPos === 'header-right')  hdrR.push(...docxPageRuns());
+
+const headers = {
+  default: new D.Header({
+    children: [new D.Paragraph({
+      tabStops: hdrTabStops,
+      children: [
+        ...hdrL,
+        new D.TextRun({ text: '\t' }),   // 跳到居中位置
+        ...hdrC,
+        new D.TextRun({ text: '\t' }),   // 跳到居右位置
+        ...hdrR,
+      ],
+      border: { bottom: { style: D.BorderStyle.SINGLE, size: 6, color: '999999', space: 1 } }
+    })]
+  })
+};
+
+// 页脚：同样用 tab stop 定位，仅放置页码
+let footers;
+if (pnPos.startsWith('footer-')) {
+  const ftrRuns = pnPos === 'footer-left'
+    ? [...docxPageRuns()]
+    : pnPos === 'footer-center'
+      ? [new D.TextRun({ text: '\t' }), ...docxPageRuns()]
+      : [new D.TextRun({ text: '\t' }), new D.TextRun({ text: '\t' }), ...docxPageRuns()];
+  footers = { default: new D.Footer({ children: [
+    new D.Paragraph({ tabStops: hdrTabStops, children: ftrRuns })
+  ]})};
+}
 ```
+
+页码动态字段（支持总页数）：
+
+```js
+function docxPageRuns() {
+  if (!(D.PageNumber && D.PageNumber.CURRENT)) return [new D.TextRun({ text: '1', font: bodyFontName, size: 18 })];
+  const hasTotalPage = !!(D.PageNumber && D.PageNumber.TOTAL_PAGES);
+  switch (pageDecor.pageNumFormat) {
+    case 'n':   return [new D.TextRun({ children: [D.PageNumber.CURRENT], font: bodyFontName, size: 18 })];
+    case 'nN':  return hasTotalPage
+      ? [new D.TextRun({ children: [D.PageNumber.CURRENT, ' / ', D.PageNumber.TOTAL_PAGES], font: bodyFontName, size: 18 })]
+      : [new D.TextRun({ children: [D.PageNumber.CURRENT], font: bodyFontName, size: 18 })];
+    case 'cn':  return [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页'], font: bodyFontName, size: 18 })];
+    case 'cnN':
+    default:    return hasTotalPage
+      ? [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页 / 共 ', D.PageNumber.TOTAL_PAGES, ' 页'], font: bodyFontName, size: 18 })]
+      : [new D.TextRun({ children: ['第 ', D.PageNumber.CURRENT, ' 页'], font: bodyFontName, size: 18 })];
+  }
+}
+```
+
+**已修复的 Bug（页眉页脚不导出问题）**
+
+| # | 现象 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | 页眉文本和页码在 Word 中占两行 | `headerChildren` 用两个独立段落而非 tab stop 同行布局 | 改为单段落 + tab stop，文本和页码共行 |
+| 2 | 选择"页眉居左/居右"页码后，导出位置始终在右 | `pageNumAlign` 用 `endsWith('center')` 判断，`'header-left'` 映射到 RIGHT | 用 tab stop 槽位分配，彻底去掉 `pageNumAlign` |
+| 3 | `headerAlign = 'none'` 时页眉文本仍然出现 | 代码直接 `pageDecor.headerText` 放进段落，未检查 `headerAlign` | 先检查 `headerAlign !== 'none'` 再填入槽位 |
 
 ---
 
