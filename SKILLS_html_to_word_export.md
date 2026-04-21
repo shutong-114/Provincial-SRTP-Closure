@@ -1,5 +1,5 @@
 ---
-name: html-to-word-export
+name: html-to-word
 description: |
   当用户需要在纯前端（无后端）HTML 页面中实现以下任意功能时使用本 skill：
   1. 将富文本内容（含 LaTeX 数学公式、图片、多级标题）导出为可下载的 Word (.docx) 文件；
