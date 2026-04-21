@@ -1,3 +1,15 @@
+---
+name: html-to-word-export
+description: |
+  当用户需要在纯前端（无后端）HTML 页面中实现以下任意功能时使用本 skill：
+  1. 将富文本内容（含 LaTeX 数学公式、图片、多级标题）导出为可下载的 Word (.docx) 文件；
+  2. 将同一页面内容导出为 PDF；
+  3. 构建带侧边栏样式面板的单页文档编辑器 UI（字体/字号/行距/页眉/页码实时预览）；
+  4. 在 docx.js 中处理 OMML 公式、tab stop 页眉、分页等高级排版需求；
+  5. 使用 KaTeX 把 LaTeX 转为 MathML 再递归转换为 OMML（Word 原生公式格式）。
+  涵盖 docx.js 8.x、FileSaver.js、KaTeX 0.16.x、html2pdf.js 的完整集成与已知 Bug 修复。
+---
+
 # SKILL: 从 HTML 网页生成可直接下载的 Word (.docx) 文档
 
 > 适用场景：单页 HTML 应用、学术报告、科技文档，需在浏览器端（无后端）将富文本 + LaTeX 公式导出为规范 Word 文件。
@@ -960,4 +972,298 @@ async function exportDocx() {
 </script>
 </body>
 </html>
+```
+
+---
+
+## 六、UI 界面层（report_editor.html）
+
+本节描述与导出功能配套的完整单页文档编辑器 UI，包括整体布局、侧边栏控件、样式模板、实时预览机制和通知系统。
+
+### 6.1 整体页面布局
+
+```
+┌─────────────────────────────────────────────────────┐
+│  #topbar（46px 顶栏）                                │
+│  背景 #1a3a6b（深蓝），标题 + 副标题                 │
+├────────────────┬────────────────────────────────────┤
+│  #sidebar      │  #main                             │
+│  (272px 固定)  │  (flex:1, overflow-y:auto)         │
+│                │                                    │
+│  左侧样式面板  │  居中显示 A4 文档页（#document-page）│
+│  可纵向滚动    │  背景 #dde1e8                       │
+└────────────────┴────────────────────────────────────┘
+```
+
+关键布局 CSS：
+```css
+body { overflow: hidden; }         /* 禁止 body 滚动，由子区域各自滚动 */
+#app  { display: flex; height: calc(100vh - 46px); }
+#sidebar { width: 272px; overflow-y: auto; display: flex; flex-direction: column; }
+#main    { flex: 1; overflow-y: auto; padding: 20px 28px; }
+```
+
+### 6.2 A4 文档预览区（#document-page）
+
+```css
+#document-page {
+  width: 210mm; min-height: 297mm;
+  margin: 0 auto;
+  padding: 2cm 2cm 2cm 2.5cm;   /* 上下左右：SEU 格式，左装订线 0.5cm 额外 */
+  background: #fff;
+  box-shadow: 0 3px 14px rgba(0,0,0,.2);
+
+  /* === CSS 变量（由侧边栏控件实时更新）=== */
+  --body-font: 'SimSun','宋体',serif;
+  --body-size: 12pt;
+  --body-lh: 1.5;
+  --h1-font: 'SimHei','黑体',sans-serif;  --h1-size: 15pt;  --h1-align: center;
+  --h2-font: 'SimHei','黑体',sans-serif;  --h2-size: 14pt;  --h2-align: left;
+  --h3-font: 'SimSun','宋体',serif;       --h3-size: 12pt;  --h3-align: left;
+}
+```
+
+页眉预览（`.pg-header`）：三个 `<span>`（left / center / right）用 flexbox 分布，由 `applyPageDecorSettings()` 填充文本。
+
+### 6.3 侧边栏（#sidebar）各区块
+
+侧边栏由多个 `.sb-section` 堆叠，每区块有 `.sb-title`（大写灰色标签）和若干控件。
+
+#### 区块1：📐 样式模板
+
+```html
+<div class="tpl-wrap" id="tpl-wrap">
+  <div class="tpl active" data-tpl="seu"      onclick="loadTemplate(this)">SEU标准</div>
+  <div class="tpl"        data-tpl="academic" onclick="loadTemplate(this)">学术简洁</div>
+  <div class="tpl"        data-tpl="modern"   onclick="loadTemplate(this)">现代简约</div>
+  <div class="tpl"        data-tpl="classic"  onclick="loadTemplate(this)">经典学报</div>
+</div>
+```
+
+四套预设模板（`TEMPLATES` 对象）：
+
+| 模板 key | 正文字体 | 正文字号 | 行距 | H1字体 | H1字号 | H1对齐 |
+|---|---|---|---|---|---|---|
+| `seu`      | SimSun 宋体     | 12pt  | 1.5 | SimHei 黑体 | 15pt | 居中 |
+| `academic` | Times New Roman | 12pt  | 1.6 | Arial       | 16pt | 居中 |
+| `modern`   | Arial           | 12pt  | 1.7 | Arial       | 18pt | 左对齐 |
+| `classic`  | SimSun 宋体     | 10.5pt| 1.5 | SimHei 黑体 | 16pt | 居中 |
+
+点击芯片 → `loadTemplate(el)` → 批量调用 `setSelect(id, val)` 设置所有 `<select>` → `applyStyles()`。
+
+`setSelect` 的容错设计：若目标 `<option>` 不存在则动态创建后选中，不报错。
+
+#### 区块2：📝 正文样式
+
+| 控件 ID | 类型 | 作用 | 默认值 |
+|---|---|---|---|
+| `s-bfont`  | `<select>` | 正文字体 | `'SimSun','宋体',serif` |
+| `s-bsize`  | `<select>` | 正文字号 | `12pt`（小四）|
+| `s-blh`    | `<select>` | 行距倍数 | `1.5` |
+
+`s-bsize` 和 `s-blh` 通过 `.grid2`（`grid-template-columns: 1fr 1fr`）并排显示。
+
+#### 区块3-5：📌 标题样式（一/二/三级）
+
+| 控件 ID | 类型 | 默认值 |
+|---|---|---|
+| `s-h1font` | `<select>` 字体 | SimHei 黑体 |
+| `s-h1size` | `<select>` 字号 | 15pt（小三）|
+| `s-h1align`| `<select>` 对齐 | 居中 |
+| `s-h2font` | `<select>` 字体 | SimHei 黑体 |
+| `s-h2size` | `<select>` 字号 | 14pt（四号）|
+| `s-h2align`| `<select>` 对齐 | 左对齐 |
+| `s-h3size` | `<select>` 字号 | 12pt（小四）|
+| `s-h3align`| `<select>` 对齐 | 左对齐 |
+
+三级标题没有独立字体选项（继承正文字体或默认）。
+
+每个控件均绑定 `onchange="applyStyles()"` 触发实时预览更新。
+
+#### 区块4：📄 页眉与页码
+
+| 控件 ID | 类型 | 选项 | 作用 |
+|---|---|---|---|
+| `s-header-text`     | `<input>`  | — | 页眉文字内容 |
+| `s-header-align`    | `<select>` | `left`/`center`/`right`/`none` | 页眉文字位置 |
+| `s-page-num-position`| `<select>`| `none` / `header-left` / `header-center` / `header-right` / `footer-left` / `footer-center` / `footer-right` | 页码位置 |
+| `s-page-num-format` | `<select>` | `n` / `nN` / `cn` / `cnN` | 页码格式 |
+
+**冲突防御**（`updatePageDecorConflicts()`）：
+- 页眉文字已占用某位置时，页码位置选项中对应项自动 `disabled`
+- 页码已占用某位置时，页眉文字对齐选项中对应项自动 `disabled`
+- 避免同一位置同时显示文字和页码
+
+所有控件均绑定 `oninput="onPageDecorChange()"` 或 `onchange="onPageDecorChange()"`。
+
+`onPageDecorChange()` 调用链：
+```
+onPageDecorChange()
+  └─ updatePageDecorConflicts()   // 禁用冲突选项
+  └─ applyPageDecorSettings()     // 更新 #document-page 中 .pg-header 的三个 span
+```
+
+#### 区块5：下载按钮区（`.dl-area`）
+
+```html
+<div class="dl-area">  <!-- margin-top: auto → 始终固定在侧边栏底部 -->
+  <button class="btn btn-docx" onclick="exportToDocx()">⬇ 下载 DOCX（含Word公式）</button>
+  <button class="btn btn-pdf"  onclick="exportToPDF()">⬇ 下载 PDF</button>
+</div>
+```
+
+| 按钮类 | 背景色 | 触发函数 |
+|---|---|---|
+| `.btn-docx` | `#1f4e79`（深蓝）| `exportToDocx()` |
+| `.btn-pdf`  | `#c00000`（深红）| `exportToPDF()` |
+
+`.dl-area` 使用 `margin-top: auto` 将按钮推到侧边栏底部（sidebar 为 `flex-column`）。
+
+### 6.4 `applyStyles()` — 实时 CSS 变量注入
+
+```js
+function applyStyles() {
+  const pg  = document.getElementById('document-page');
+  const set = (k, v) => pg.style.setProperty(k, v);
+
+  set('--body-font',  document.getElementById('s-bfont').value);
+  set('--body-size',  document.getElementById('s-bsize').value);
+  set('--body-lh',    document.getElementById('s-blh').value);
+  set('--h1-font',    document.getElementById('s-h1font').value);
+  set('--h1-size',    document.getElementById('s-h1size').value);
+  set('--h1-align',   document.getElementById('s-h1align').value);
+  set('--h2-font',    document.getElementById('s-h2font').value);
+  set('--h2-size',    document.getElementById('s-h2size').value);
+  set('--h2-align',   document.getElementById('s-h2align').value);
+  set('--h3-size',    document.getElementById('s-h3size').value);
+  set('--h3-align',   document.getElementById('s-h3align').value);
+  onPageDecorChange();   // 同步更新页眉/页码预览
+}
+```
+
+CSS 变量仅设置在 `#document-page` 节点上，作用域即文档预览区，不影响侧边栏样式。导出时从相同 `<select>` 读取同一套值，保证预览与导出一致。
+
+### 6.5 内容块 DOM 类名与 CONTENT 类型对应
+
+| CONTENT `type` | DOM 类名 | CSS 变量 | contenteditable |
+|---|---|---|---|
+| `h0` / `h1` | `.dh1` | `--h1-*` | `true` |
+| `h2` | `.dh2` | `--h2-*` | `true` |
+| `h3` | `.dh3` | `--h3-*` | `true` |
+| `para` | `.dp` | `--body-*`，`text-indent:2em` | `true` |
+| `kw`（关键词行）| `.dkw` | `--body-*` | `true` |
+| `formula` | `.df-wrap > .df-inner` | — | `false`（KaTeX 渲染）|
+| `refs` | `.dref` | `--body-*`，悬挂缩进 `text-indent:-2em;padding-left:2em` | `true` |
+| `img` | `figure.df-figure` | — | `false` |
+
+公式块额外结构：
+```html
+<div class="df-wrap">           <!-- flex 容器，相对定位 -->
+  <div class="df-inner" data-latex="...">
+    <span class="math-block">\[...\]</span>   <!-- KaTeX auto-render 目标 -->
+  </div>
+  <span class="df-num">(1)</span>              <!-- 公式编号，绝对定位在右 -->
+</div>
+```
+
+`renderContent()` 在页面初始化时执行一次，之后由 KaTeX `auto-render` 扫描 `.math-block` 并渲染。
+
+### 6.6 通知组件（#notif）
+
+```html
+<div id="notif"></div>
+```
+
+```css
+#notif {
+  position: fixed; top: 60px; right: 18px;
+  background: rgba(30,30,30,.92); color: #fff;
+  padding: 9px 18px; border-radius: 7px;
+  opacity: 0; transition: opacity .25s; pointer-events: none;
+}
+#notif.show { opacity: 1; }
+```
+
+```js
+let notifTimer = null;
+function notify(msg, duration = 2500) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(notifTimer);
+  notifTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+```
+
+在导出开始/结束/报错时调用：
+```js
+notify('正在生成 DOCX，请稍候…');
+notify('✅ DOCX 已下载！');
+notify('❌ 导出失败：' + err.message, 4000);
+```
+
+### 6.7 库加载状态指示（#lib-status）
+
+页面底部有一个固定定位的状态条，实时显示 CDN 库的加载进度：
+
+```js
+function updateLibStatus() {
+  const docxOk     = !!(window.docx && window.docx.Document);
+  const saverOk    = typeof saveAs === 'function';
+  const katexOk    = typeof katex  === 'function';
+  const pdf2Ok     = typeof html2pdf === 'function';
+  // 全部就绪时隐藏状态条，否则显示各库加载状态
+}
+```
+
+这允许用户在库尚未加载完成时（网络慢）看到明确提示，而非点击导出后静默失败。
+
+### 6.8 完整 HTML 骨架
+
+```html
+<!-- 顶栏 -->
+<div id="topbar">
+  <h1>结项报告编辑器</h1>
+  <span class="subtitle">| 项目名称</span>
+</div>
+
+<!-- 主体：侧边栏 + 文档预览 -->
+<div id="app">
+  <aside id="sidebar">
+    <!-- 样式模板芯片 -->
+    <div class="sb-section"> ... </div>
+    <!-- 正文样式 -->
+    <div class="sb-section"> ... </div>
+    <!-- 一/二/三级标题样式 -->
+    <div class="sb-section"> ... </div>
+    <div class="sb-section"> ... </div>
+    <div class="sb-section"> ... </div>
+    <!-- 页眉与页码 -->
+    <div class="sb-section"> ... </div>
+    <!-- 下载按钮（margin-top:auto 固定底部）-->
+    <div class="dl-area">
+      <button class="btn btn-docx" onclick="exportToDocx()">⬇ 下载 DOCX</button>
+      <button class="btn btn-pdf"  onclick="exportToPDF()">⬇ 下载 PDF</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="document-page">
+      <!-- 页眉预览 -->
+      <div class="pg-header">
+        <span id="pg-hdr-left"></span>
+        <span id="pg-hdr-center"></span>
+        <span id="pg-hdr-right">第 1 页</span>
+      </div>
+      <!-- 正文内容（由 renderContent() 填充）-->
+      <div id="doc-content"></div>
+    </div>
+  </main>
+</div>
+
+<!-- 全局通知 -->
+<div id="notif"></div>
+
+<!-- 库加载状态 -->
+<div id="lib-status"></div>
 ```
