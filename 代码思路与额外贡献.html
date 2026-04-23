@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TSP 可视化实验平台 — 结项报告</title>
+  <style>
+    /* ===== 基础重置 ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "SimSun", "宋体", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.9;
+      color: #222;
+      background: #f4f6f9;
+    }
+
+    /* ===== 封面 ===== */
+    .cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #1a3a6b 0%, #2d6cdf 60%, #4fa3e0 100%);
+      color: #fff;
+      text-align: center;
+      padding: 40px 24px;
+    }
+    .cover .badge {
+      display: inline-block;
+      border: 2px solid rgba(255,255,255,0.6);
+      border-radius: 4px;
+      padding: 4px 18px;
+      font-size: 13px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 32px;
+      opacity: 0.85;
+    }
+    .cover h1 {
+      font-size: clamp(24px, 5vw, 42px);
+      font-weight: 700;
+      letter-spacing: 2px;
+      line-height: 1.35;
+      margin-bottom: 16px;
+    }
+    .cover .subtitle {
+      font-size: clamp(14px, 2.5vw, 20px);
+      opacity: 0.85;
+      margin-bottom: 48px;
+    }
+    .cover-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 32px;
+      justify-content: center;
+      font-size: 14px;
+      opacity: 0.75;
+    }
+    .cover-meta span { display: flex; align-items: center; gap: 6px; }
+
+    /* ===== 布局 ===== */
+    .container {
+      max-width: 960px;
+      margin: 48px auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ===== 目录 ===== */
+    .toc {
+      background: #fff;
+      border-left: 5px solid #2d6cdf;
+      border-radius: 6px;
+      padding: 28px 32px;
+      margin-bottom: 48px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .toc h2 {
+      font-size: 17px;
+      color: #2d6cdf;
+      margin-bottom: 16px;
+      letter-spacing: 1px;
+    }
+    .toc ol { padding-left: 20px; }
+    .toc li { margin: 6px 0; }
+    .toc a { color: #2d6cdf; text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    .toc ol ol { margin-top: 4px; }
+    .toc ol ol li { font-size: 13px; color: #555; }
+
+    /* ===== 章节卡片 ===== */
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      margin-bottom: 36px;
+      overflow: hidden;
+    }
+    .section-header {
+      background: #2d6cdf;
+      color: #fff;
+      padding: 16px 28px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .section-header .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px; height: 32px;
+      background: rgba(255,255,255,0.25);
+      border-radius: 50%;
+      font-size: 15px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .section-body { padding: 24px 32px; }
+
+    /* ===== 子章节 ===== */
+    h3 {
+      font-size: 16px;
+      color: #1a3a6b;
+      font-weight: 700;
+      margin: 24px 0 10px;
+      padding-bottom: 5px;
+      border-bottom: 1px solid #e0e7f3;
+    }
+    h4 {
+      font-size: 14px;
+      color: #2d6cdf;
+      font-weight: 700;
+      margin: 16px 0 6px;
+    }
+
+    /* ===== 正文 ===== */
+    p { margin: 8px 0; color: #333; }
+
+    /* ===== 列表 ===== */
+    ul, ol { padding-left: 22px; margin: 8px 0; }
+    li { margin: 5px 0; color: #333; }
+    ul li::marker { color: #2d6cdf; }
+
+    /* ===== 代码 ===== */
+    code {
+      font-family: "Consolas", "Courier New", monospace;
+      background: #eef2fb;
+      color: #c0392b;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 13px;
+    }
+
+    /* ===== 公式块 ===== */
+    .formula {
+      background: #f0f5ff;
+      border-left: 3px solid #2d6cdf;
+      padding: 10px 18px;
+      font-family: "Consolas", monospace;
+      font-size: 14px;
+      color: #1a3a6b;
+      border-radius: 0 4px 4px 0;
+      margin: 10px 0;
+    }
+
+    /* ===== 工程亮点 / 贡献卡 ===== */
+    .highlight-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .highlight-card {
+      background: #f0f5ff;
+      border: 1px solid #d0dff7;
+      border-radius: 6px;
+      padding: 14px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .highlight-card .icon {
+      font-size: 20px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .highlight-card .content { flex: 1; }
+    .highlight-card .content strong { font-size: 13px; color: #1a3a6b; }
+    .highlight-card .content p { font-size: 13px; color: #555; margin: 3px 0 0; }
+
+    /* ===== 贡献方向卡 ===== */
+    .contrib-card {
+      border: 1px solid #d0dff7;
+      border-radius: 6px;
+      margin: 16px 0;
+      overflow: hidden;
+    }
+    .contrib-card .contrib-title {
+      background: #eef2fb;
+      padding: 10px 18px;
+      font-weight: 700;
+      color: #1a3a6b;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .contrib-card .contrib-body {
+      padding: 12px 20px;
+    }
+    .contrib-card .value-tag {
+      display: inline-block;
+      background: #2d6cdf;
+      color: #fff;
+      font-size: 12px;
+      border-radius: 3px;
+      padding: 2px 9px;
+      margin-top: 8px;
+    }
+
+    /* ===== 风险提示 ===== */
+    .risk-list {
+      list-style: none;
+      padding: 0;
+    }
+    .risk-list li {
+      background: #fff8e1;
+      border-left: 4px solid #f39c12;
+      padding: 10px 14px;
+      border-radius: 0 4px 4px 0;
+      margin: 10px 0;
+      color: #555;
+      font-size: 14px;
+    }
+
+    /* ===== 结论块 ===== */
+    .conclusion {
+      background: linear-gradient(135deg, #eef2fb 0%, #dce9f9 100%);
+      border-radius: 6px;
+      padding: 22px 28px;
+      color: #1a3a6b;
+      font-size: 15px;
+      line-height: 1.9;
+    }
+
+    /* ===== 分隔线 ===== */
+    hr { border: none; border-top: 1px solid #e5e9f0; margin: 20px 0; }
+
+    /* ===== 页脚 ===== */
+    footer {
+      text-align: center;
+      color: #999;
+      font-size: 12px;
+      padding: 24px;
+      border-top: 1px solid #e5e9f0;
+    }
+
+    /* ===== 打印样式 ===== */
+    @media print {
+      body { background: #fff; }
+      .cover { min-height: auto; padding: 60px 24px; page-break-after: always; }
+      .section { box-shadow: none; border: 1px solid #ddd; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== 封面 ===== -->
+<div class="cover">
+  <div class="badge">省级大学生创新训练计划 · 结项报告</div>
+  <h1>TSP 可视化实验平台项目报告</h1>
+  <p class="subtitle">代码思路与额外贡献</p>
+  <div class="cover-meta">
+    <span>📅 2026 年</span>
+    <span>🏫 东南大学</span>
+    <span>📄 共 6 章</span>
+  </div>
+</div>
+
+<!-- ===== 主体 ===== -->
+<div class="container">
+
+  <!-- 目录 -->
+  <nav class="toc" id="toc">
+    <h2>📋 目录</h2>
+    <ol>
+      <li><a href="#s1">项目目标与问题定义</a></li>
+      <li><a href="#s2">基本代码思路（核心实现逻辑）</a>
+        <ol>
+          <li><a href="#s2-1">总体架构思路</a></li>
+          <li><a href="#s2-2">配置驱动的模式切换</a></li>
+          <li><a href="#s2-3">目标函数设计思路</a></li>
+          <li><a href="#s2-4">求解器设计思路</a></li>
+          <li><a href="#s2-5">固定起终点（depot）实现思路</a></li>
+          <li><a href="#s2-6">可视化与可解释性思路</a></li>
+        </ol>
+      </li>
+      <li><a href="#s3">当前实现的工程亮点</a></li>
+      <li><a href="#s4">额外贡献思路</a></li>
+      <li><a href="#s5">风险与改进建议</a></li>
+      <li><a href="#s6">结论</a></li>
+    </ol>
+  </nav>
+
+  <!-- ===== 第 1 章 ===== -->
+  <section class="section" id="s1">
+    <div class="section-header">
+      <span class="num">1</span>
+      项目目标与问题定义
+    </div>
+    <div class="section-body">
+      <p>本项目构建了一个"可切换算法 + 可切换任务模式"的 TSP 可视化实验平台，核心目标是：</p>
+      <ol>
+        <li>在统一工程框架下比较不同求解算法（SA、GA）的行为差异。</li>
+        <li>支持从经典最短路回路任务平滑扩展到带时间约束与优先级的任务调度问题。</li>
+        <li>通过动画化过程展示，让优化"结果"与"搜索过程"都可观察、可解释、可复现。</li>
+      </ol>
+      <p>平台面向二维平面任务点，当前采用欧氏距离作为基础移动成本。</p>
+    </div>
+  </section>
+
+  <!-- ===== 第 2 章 ===== -->
+  <section class="section" id="s2">
+    <div class="section-header">
+      <span class="num">2</span>
+      基本代码思路（核心实现逻辑）
+    </div>
+    <div class="section-body">
+
+      <h3 id="s2-1">2.1 总体架构思路</h3>
+      <p>系统按"配置层 → 目标函数层 → 求解器层 → 可视化层 → 数据层"分层组织：</p>
+      <ul>
+        <li><code>config.py</code>：统一管理可切换参数（solver / task / route mode、超参数、惩罚权重）。</li>
+        <li><code>objectives/</code>：封装 <code>classic</code> 与 <code>time_window</code> 两类代价函数。</li>
+        <li><code>solvers/</code>：实现 SA 与 GA，输出统一的 <code>SolverResult</code> 与 <code>HistoryFrame</code>。</li>
+        <li><code>visualization/</code>：负责图绘制与动画播放。</li>
+        <li><code>data/</code>：提供可运行样例任务集。</li>
+      </ul>
+      <p>这样做的价值是：算法切换、任务切换、展示切换彼此解耦，便于快速实验与后续扩展。</p>
+
+      <h3 id="s2-2">2.2 配置驱动的模式切换</h3>
+      <p>平台通过 <code>ExperimentConfig</code> 控制行为，主要切换参数包括：</p>
+      <ul>
+        <li><code>solver_type</code>：<code>SA | GA</code></li>
+        <li><code>task_mode</code>：<code>classic | time_window</code></li>
+        <li><code>route_mode</code>：<code>fixed_depot</code>（当前默认）</li>
+        <li><code>start_node_id</code>：默认 <code>1</code>（固定起终点）</li>
+      </ul>
+      <p>配置驱动避免了硬编码分支，提升了实验可重复性和参数可追踪性。</p>
+
+      <h3 id="s2-3">2.3 目标函数设计思路</h3>
+
+      <h4>classic 模式</h4>
+      <p>目标是最小化回路总距离：</p>
+      <div class="formula">J = route_length</div>
+
+      <h4>time_window 模式</h4>
+      <p>目标函数采用加权和：</p>
+      <div class="formula">J = α × route_length + β × late_penalty + γ × early_penalty</div>
+      <p>其中：</p>
+      <ul>
+        <li><code>late_penalty</code>：采用分段二次惩罚，并乘以 <code>2^priority</code> 实现优先级放大。</li>
+        <li><code>early_penalty</code>：采用轻微线性惩罚，避免过度提前完成。</li>
+      </ul>
+      <p>设计原则是"晚到强惩罚、提前轻惩罚"，使系统在不可避免违约时更倾向保护高优先级任务。</p>
+
+      <h3 id="s2-4">2.4 求解器设计思路</h3>
+
+      <h4>SA（模拟退火）</h4>
+      <ul>
+        <li>邻域操作：<code>swap</code>、<code>2-opt</code>、<code>segment reverse</code>。</li>
+        <li>退火接受机制：允许以概率接受劣解，减少陷入局部最优。</li>
+        <li>每轮记录历史帧，支持动画播放。</li>
+      </ul>
+
+      <h4>GA（遗传算法）</h4>
+      <ul>
+        <li>编码：节点访问序列。</li>
+        <li>流程：随机种群 → 锦标赛选择 → OX 交叉 → 变异 → 精英保留。</li>
+        <li>适应度：<code>fitness = 1 / (cost + 1e-6)</code>。</li>
+        <li>每代记录历史帧，支持动画播放。</li>
+      </ul>
+
+      <h3 id="s2-5">2.5 固定起终点（depot）实现思路</h3>
+      <p>当前默认 <code>route_mode=fixed_depot</code>，<code>start_node_id=1</code>。<br/>
+         实现上采用"内部路径 + depot 拼接"策略：</p>
+      <ol>
+        <li>求解器仅优化 depot 之外的内部序列。</li>
+        <li>评估前统一构造完整路径 <code>[start_node_id, *inner_route]</code>。</li>
+        <li>闭环回路仍由目标函数层统一处理。</li>
+      </ol>
+      <p>这样既保持了固定起终点约束，又保留了 SA/GA 既有优化能力。</p>
+
+      <h3 id="s2-6">2.6 可视化与可解释性思路</h3>
+      <ul>
+        <li>使用 <code>networkx + matplotlib</code> 绘制 circle-edge 图。</li>
+        <li>边上显示欧氏距离权重。</li>
+        <li>当前最优路径高亮。</li>
+        <li><code>FuncAnimation</code> 播放搜索过程（SA 按迭代，GA 按代）。</li>
+        <li>信息面板展示：模式、代价、迭代计数、时间窗指标。</li>
+      </ul>
+      <p>此外，展示层将求解器内部"索引路径"映射为任务 <code>task.id</code> 展示，提升了输出可读性和用户理解一致性。</p>
+
+    </div>
+  </section>
+
+  <!-- ===== 第 3 章 ===== -->
+  <section class="section" id="s3">
+    <div class="section-header">
+      <span class="num">3</span>
+      当前实现的工程亮点
+    </div>
+    <div class="section-body">
+      <div class="highlight-grid">
+        <div class="highlight-card">
+          <div class="icon">🗂️</div>
+          <div class="content">
+            <strong>统一数据结构</strong>
+            <p><code>Task</code>、<code>RouteEvaluation</code>、<code>HistoryFrame</code>、<code>SolverResult</code></p>
+          </div>
+        </div>
+        <div class="highlight-card">
+          <div class="icon">🔗</div>
+          <div class="content">
+            <strong>统一 objective 接口</strong>
+            <p>求解器无需感知 <code>classic/time_window</code> 公式细节</p>
+          </div>
+        </div>
+        <div class="highlight-card">
+          <div class="icon">⚙️</div>
+          <div class="content">
+            <strong>配置驱动实验</strong>
+            <p>便于跑参数对比实验与消融实验</p>
+          </div>
+        </div>
+        <div class="highlight-card">
+          <div class="icon">✅</div>
+          <div class="content">
+            <strong>测试保障</strong>
+            <p>覆盖目标函数、求解器、depot 约束与边界场景（含两节点最小合法实例）</p>
+          </div>
+        </div>
+        <div class="highlight-card">
+          <div class="icon">🎞️</div>
+          <div class="content">
+            <strong>动画可运行</strong>
+            <p>支持实时过程观察，而非只输出最终 gif</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 第 4 章 ===== -->
+  <section class="section" id="s4">
+    <div class="section-header">
+      <span class="num">4</span>
+      额外贡献思路（可用于答辩/创新点）
+    </div>
+    <div class="section-body">
+      <p>以下内容是基于当前平台可直接推进的"额外贡献方向"，可作为课程创新点或论文后续工作：</p>
+
+      <div class="contrib-card">
+        <div class="contrib-title">🔒 贡献方向 A：约束处理增强</div>
+        <div class="contrib-body">
+          <ol>
+            <li>硬约束版时间窗：在 SA/GA 中加入可行性修复（repair operator），优先生成可行解。</li>
+            <li>动态权重策略：随迭代自适应调整 α/β/γ，前期探索、后期收敛。</li>
+            <li>多目标优化：将"路径长度、晚到任务数、最大延迟"做 Pareto 前沿分析。</li>
+          </ol>
+          <span class="value-tag">价值：从"软约束优化"升级为更工程化的"可行性优先 + 多目标权衡"</span>
+        </div>
+      </div>
+
+      <div class="contrib-card">
+        <div class="contrib-title">⚡ 贡献方向 B：算法性能提升</div>
+        <div class="contrib-body">
+          <ol>
+            <li>SA 混合邻域调度：根据阶段温度自适应选择邻域算子。</li>
+            <li>GA 局部搜索融合：对精英个体做轻量 2-opt 作为 memetic algorithm。</li>
+            <li>参数自动调优：用网格搜索或贝叶斯优化进行离线超参数标定。</li>
+          </ol>
+          <span class="value-tag">价值：同等时间预算下获得更优解、更稳定收敛曲线</span>
+        </div>
+      </div>
+
+      <div class="contrib-card">
+        <div class="contrib-title">📊 贡献方向 C：实验与评估体系建设</div>
+        <div class="contrib-body">
+          <ol>
+            <li>增加随机任务生成器，按规模/约束强度分层评测。</li>
+            <li>固定随机种子批量跑实验，输出统计结果（均值、方差、箱线图）。</li>
+            <li>建立标准指标：总成本、路长、晚到率、最大延迟、收敛速度、计算时间。</li>
+          </ol>
+          <span class="value-tag">价值：从"演示系统"升级为"可复现实验平台"</span>
+        </div>
+      </div>
+
+      <div class="contrib-card">
+        <div class="contrib-title">🌐 贡献方向 D：场景扩展</div>
+        <div class="contrib-body">
+          <ol>
+            <li>mTSP：多机器人协同访问任务点。</li>
+            <li>VRPTW：引入容量约束与时间窗，贴近物流调度。</li>
+            <li>动态任务插入：运行中新增任务并增量重规划。</li>
+            <li>局部路径层接入 A*/Dijkstra：用于障碍地图和真实路网。</li>
+          </ol>
+          <span class="value-tag">价值：把课程级平台平滑升级到更贴近工业问题的调度框架</span>
+        </div>
+      </div>
+
+      <div class="contrib-card">
+        <div class="contrib-title">🖥️ 贡献方向 E：可视化与交互增强</div>
+        <div class="contrib-body">
+          <ol>
+            <li>参数面板：运行中切换算法与权重。</li>
+            <li>多图联动：同时展示代价曲线、延迟分布、任务甘特视图。</li>
+            <li>回放控制：暂停、逐帧、倍速、关键帧跳转。</li>
+            <li>结果导出：CSV / JSON / GIF / MP4。</li>
+          </ol>
+          <span class="value-tag">价值：增强教学演示、实验分析与项目展示效果</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== 第 5 章 ===== -->
+  <section class="section" id="s5">
+    <div class="section-header">
+      <span class="num">5</span>
+      风险与改进建议
+    </div>
+    <div class="section-body">
+      <ul class="risk-list">
+        <li>⚠️ <code>start_node_id</code> 当前按任务列表索引解释，而非任务 <code>id</code> 字段；后续若接入外部数据，建议统一为按 <code>Task.id</code> 指定 depot。</li>
+        <li>⚠️ 大规模任务下，matplotlib 动画性能可能受限；可考虑抽样显示或迁移到更高性能渲染方案。</li>
+        <li>⚠️ 当前算法属于启发式近似，不保证全局最优；报告中应明确"实验求解"定位与适用范围。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===== 第 6 章 ===== -->
+  <section class="section" id="s6">
+    <div class="section-header">
+      <span class="num">6</span>
+      结论
+    </div>
+    <div class="section-body">
+      <div class="conclusion">
+        <p>本项目已完成一个结构清晰、可切换、可视化、可扩展的 TSP 实验平台。</p>
+        <p>其核心价值在于：把"算法实现、目标建模、过程可视化、实验对比"整合到统一框架中，
+           并通过固定起终点、时间窗惩罚和测试保障提升了工程完整性。</p>
+        <p>在此基础上，平台可进一步演化为面向 mTSP、VRPTW 与动态调度的研究原型，具备较好的继续开发潜力。</p>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /container -->
+
+<footer>
+  <p>省级大学生创新训练计划 · 结项报告 &nbsp;|&nbsp; TSP 可视化实验平台 &nbsp;|&nbsp; 2026</p>
+</footer>
+
+</body>
+</html>
